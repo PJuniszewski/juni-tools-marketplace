@@ -6,7 +6,7 @@ A curated marketplace of Claude Code plugins for professional development workfl
 
 | Plugin | Description | Version |
 |--------|-------------|---------|
-| **cook** | Feature development with guardrails. Plan, Review, Code, Ship. | v1.0.0 |
+| **cook** | Feature development with guardrails. Plan, Review, Code, Ship. | v1.0.1 |
 | **trimmer** | Token guard hook that blocks oversized prompts. | v1.0.0 |
 
 ---
