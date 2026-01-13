@@ -7,7 +7,7 @@ A curated marketplace of Claude Code plugins for professional development workfl
 | Plugin | Description | Version |
 |--------|-------------|---------|
 | **cook** | Feature development with guardrails. Plan, Review, Code, Ship. | v1.0.2 |
-| **context-guard** | LLM Epistemic Safety Layer - prevents hallucinations on incomplete data. | v1.0.0-alpha |
+| **context-guard** | LLM Epistemic Safety Layer - prevents hallucinations on incomplete data. | v1.0.0-alpha.2 |
 
 ---
 
