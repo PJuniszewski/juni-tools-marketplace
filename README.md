@@ -6,8 +6,8 @@ A curated marketplace of Claude Code plugins for professional development workfl
 
 | Plugin | Description | Version |
 |--------|-------------|---------|
-| **cook** | Feature development with guardrails. Plan, Review, Code, Ship. | v1.0.2 |
-| **context-guard** | LLM Epistemic Safety Layer - prevents hallucinations on incomplete data. | v1.0.0-alpha.2 |
+| **cook** | Feature development with guardrails. Plan, Review, Code, Ship. | v1.4.0 |
+| **context-guard** | LLM Epistemic Safety Layer - prevents hallucinations on incomplete data. | v1.0.0-beta |
 
 ---
 
@@ -45,24 +45,25 @@ claude /plugin enable context-guard
 
 ### context-guard
 
-The context-guard plugin requires two environment variables:
+Works out of the box - no API keys required. The plugin provides:
 
-```bash
-export ANTHROPIC_API_KEY="sk-ant-..."
-export TOKEN_GUARD_MODEL="claude-sonnet-4-20250514"
-```
+1. **Automatic hook** - Warns on large JSON payloads with forensic patterns
+2. **`/guard` command** - Manual analysis with full control over trimming
 
-Add to your shell profile (`~/.bashrc`, `~/.zshrc`) for persistence:
+**Optional environment variables:**
 
-```bash
-echo 'export ANTHROPIC_API_KEY="your-key-here"' >> ~/.zshrc
-echo 'export TOKEN_GUARD_MODEL="claude-sonnet-4-20250514"' >> ~/.zshrc
-```
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TOKEN_GUARD_MIN_CHARS` | 6000 | Below this, always allow |
+| `TOKEN_GUARD_WARN_CHARS` | 15000 | Above this, warn user |
+| `TOKEN_GUARD_HARD_LIMIT_CHARS` | 100000 | Above this, block (context flooding) |
+| `TOKEN_GUARD_FAIL_CLOSED` | false | Block on forensic+large (vs warn) |
+| `TOKEN_GUARD_PROMPT_LIMIT` | 3500 | Token budget for `/guard` command |
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `ANTHROPIC_API_KEY` | Yes | Your Anthropic API key for token counting |
-| `TOKEN_GUARD_MODEL` | Yes | Model ID for token calculation (e.g., `claude-sonnet-4-20250514`) |
+**Escape hatches in prompts:**
+- `#trimmer:off` - Disable hook for this prompt
+- `#trimmer:force` - Bypass all checks
+- `#trimmer:mode=analysis` - Allow sampling for forensic queries
 
 ### cook
 
@@ -84,9 +85,8 @@ The cook plugin works out of the box. Optional configuration:
 claude /plugin install juni-tools:context-guard
 claude /plugin enable context-guard
 
-# Configure environment
-export ANTHROPIC_API_KEY="sk-ant-..."
-export TOKEN_GUARD_MODEL="claude-sonnet-4-20250514"
+# Ready to use! No configuration required.
+# Use /guard data.json to analyze JSON files
 ```
 
 ### Example 2: Install Both Plugins
@@ -100,9 +100,7 @@ claude /plugin install juni-tools:cook juni-tools:context-guard
 # Enable both plugins
 claude /plugin enable cook context-guard
 
-# Configure context-guard environment
-export ANTHROPIC_API_KEY="sk-ant-..."
-export TOKEN_GUARD_MODEL="claude-sonnet-4-20250514"
+# Both plugins work out of the box!
 ```
 
 ---
@@ -181,8 +179,8 @@ When releasing a new plugin version:
 
 ```bash
 cd claude-cook  # or context-guard
-git tag v1.0.2
-git push origin v1.0.2
+git tag v1.4.0
+git push origin v1.4.0
 ```
 
 ### 2. Update README Version Table
@@ -194,7 +192,7 @@ Commit and push:
 ```bash
 cd juni-tools-marketplace
 git add README.md
-git commit -m "Update cook to v1.0.2"
+git commit -m "Update cook to v1.4.0"
 git push origin main
 ```
 
@@ -204,7 +202,7 @@ Test the installation flow:
 
 ```bash
 # Fresh install test (run /plugin, select "Add Marketplace", enter: PJuniszewski/juni-tools-marketplace)
-claude /plugin install juni-tools:cook@v1.0.2
+claude /plugin install juni-tools:cook@v1.4.0
 claude /plugin enable cook
 
 # Verify plugin loads
