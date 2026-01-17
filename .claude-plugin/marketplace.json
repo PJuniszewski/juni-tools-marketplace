@@ -17,7 +17,7 @@
     },
     {
       "name": "context-guard",
-      "description": "Auto-warns when pasting large JSON with forensic queries (e.g. 'why did id=X fail?'). Prevents hallucinations when data might get trimmed.",
+      "description": "Context optimization for JSON data - lossless compression, token analysis, sampling warnings.",
       "source": {
         "source": "url",
         "url": "https://github.com/PJuniszewski/context-guard.git"
