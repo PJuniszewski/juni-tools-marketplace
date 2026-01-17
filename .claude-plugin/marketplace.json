@@ -17,7 +17,7 @@
     },
     {
       "name": "context-guard",
-      "description": "LLM Epistemic Safety Layer - context integrity enforcement with sampling-aware guardrails. Prevents confident hallucinations on incomplete data.",
+      "description": "Auto-warns when pasting large JSON with forensic queries (e.g. 'why did id=X fail?'). Prevents hallucinations when data might get trimmed.",
       "source": {
         "source": "url",
         "url": "https://github.com/PJuniszewski/context-guard.git"
