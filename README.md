@@ -45,10 +45,20 @@ claude /plugin enable context-guard
 
 ### context-guard
 
-Works out of the box - no API keys required. The plugin provides:
+Works out of the box - no configuration required.
 
-1. **Automatic hook** - Warns on large JSON payloads with forensic patterns
-2. **`/guard` command** - Manual analysis with full control over trimming
+**How it works:** Automatically analyzes every prompt you send. When you paste large JSON data and ask forensic questions (e.g., "Why did request id=abc123 fail?"), the plugin warns you that sampling might hide the answer.
+
+**Example scenario:**
+```
+You: Here's my API logs: [50,000 chars of JSON]
+     Why did request id=abc123 fail?
+
+[context-guard] WARNING: Forensic query detected ("request id=abc123")
+                         with large payload (~12,500 tokens)
+[context-guard] HINT: The specific record might get trimmed.
+                      Add #trimmer:mode=analysis to allow sampling.
+```
 
 **Optional environment variables:**
 
@@ -58,10 +68,9 @@ Works out of the box - no API keys required. The plugin provides:
 | `TOKEN_GUARD_WARN_CHARS` | 15000 | Above this, warn user |
 | `TOKEN_GUARD_HARD_LIMIT_CHARS` | 100000 | Above this, block (context flooding) |
 | `TOKEN_GUARD_FAIL_CLOSED` | false | Block on forensic+large (vs warn) |
-| `TOKEN_GUARD_PROMPT_LIMIT` | 3500 | Token budget for `/guard` command |
 
 **Escape hatches in prompts:**
-- `#trimmer:off` - Disable hook for this prompt
+- `#trimmer:off` - Disable for this prompt
 - `#trimmer:force` - Bypass all checks
 - `#trimmer:mode=analysis` - Allow sampling for forensic queries
 
@@ -85,8 +94,7 @@ The cook plugin works out of the box. Optional configuration:
 claude /plugin install juni-tools:context-guard
 claude /plugin enable context-guard
 
-# Ready to use! No configuration required.
-# Use /guard data.json to analyze JSON files
+# Ready! Hook auto-analyzes prompts with large JSON payloads.
 ```
 
 ### Example 2: Install Both Plugins
