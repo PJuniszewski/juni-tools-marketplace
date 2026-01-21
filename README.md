@@ -6,7 +6,7 @@ A curated marketplace of Claude Code plugins for professional development workfl
 
 | Plugin | Description | Version |
 |--------|-------------|---------|
-| **cook** | Feature development with guardrails. Plan, Review, Code, Ship. | v1.5.2 |
+| **cook** | Feature development with guardrails. Plan, Review, Code, Ship. | v1.5.3 |
 | **context-guard** | Context optimization for JSON data - lossless compression, token analysis, sampling warnings. | v1.0.0 |
 
 ---
@@ -187,8 +187,8 @@ When releasing a new plugin version:
 
 ```bash
 cd claude-cook  # or context-guard
-git tag v1.5.2
-git push origin v1.5.2
+git tag v1.5.3
+git push origin v1.5.3
 ```
 
 ### 2. Update README Version Table
@@ -200,7 +200,7 @@ Commit and push:
 ```bash
 cd juni-tools-marketplace
 git add README.md
-git commit -m "Update cook to v1.5.2"
+git commit -m "Update cook to v1.5.3"
 git push origin main
 ```
 
@@ -210,7 +210,7 @@ Test the installation flow:
 
 ```bash
 # Fresh install test (run /plugin, select "Add Marketplace", enter: PJuniszewski/juni-tools-marketplace)
-claude /plugin install juni-tools:cook@v1.5.2
+claude /plugin install juni-tools:cook@v1.5.3
 claude /plugin enable cook
 
 # Verify plugin loads
