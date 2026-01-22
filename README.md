@@ -1,4 +1,4 @@
-# juni-tools-marketplace
+# juni-skills-marketplace
 
 A curated marketplace of Claude Code plugins for professional development workflows.
 
@@ -17,19 +17,19 @@ A curated marketplace of Claude Code plugins for professional development workfl
 
 ```bash
 claude /plugin
-# Then select "Add Marketplace" and enter: PJuniszewski/juni-tools-marketplace
+# Then select "Add Marketplace" and enter: PJuniszewski/juni-skills-marketplace
 ```
 
 ### Step 2: Install Plugin(s)
 
 **Install a single plugin:**
 ```bash
-claude /plugin install juni-tools:cook
+claude /plugin install juni-skills:cook
 ```
 
 **Install all plugins:**
 ```bash
-claude /plugin install juni-tools:cook juni-tools:context-guard
+claude /plugin install juni-skills:cook juni-skills:context-guard
 ```
 
 ### Step 3: Enable Plugin(s)
@@ -88,10 +88,10 @@ The cook plugin works out of the box. Optional configuration:
 ### Example 1: Install Only Context Guard
 
 ```bash
-# Add marketplace (run /plugin, select "Add Marketplace", enter: PJuniszewski/juni-tools-marketplace)
+# Add marketplace (run /plugin, select "Add Marketplace", enter: PJuniszewski/juni-skills-marketplace)
 
 # Install and enable context-guard
-claude /plugin install juni-tools:context-guard
+claude /plugin install juni-skills:context-guard
 claude /plugin enable context-guard
 
 # Ready! Hook auto-analyzes prompts with large JSON payloads.
@@ -100,10 +100,10 @@ claude /plugin enable context-guard
 ### Example 2: Install Both Plugins
 
 ```bash
-# Add marketplace (run /plugin, select "Add Marketplace", enter: PJuniszewski/juni-tools-marketplace)
+# Add marketplace (run /plugin, select "Add Marketplace", enter: PJuniszewski/juni-skills-marketplace)
 
 # Install both plugins
-claude /plugin install juni-tools:cook juni-tools:context-guard
+claude /plugin install juni-skills:cook juni-skills:context-guard
 
 # Enable both plugins
 claude /plugin enable cook context-guard
@@ -120,11 +120,11 @@ For teams, you can pre-configure plugins in your project's `.claude/settings.jso
 ```json
 {
   "extraKnownMarketplaces": [
-    "PJuniszewski/juni-tools-marketplace"
+    "PJuniszewski/juni-skills-marketplace"
   ],
   "enabledPlugins": [
-    "juni-tools:context-guard",
-    "juni-tools:cook"
+    "juni-skills:context-guard",
+    "juni-skills:cook"
   ]
 }
 ```
@@ -138,10 +138,10 @@ Enable only context-guard for a project:
 ```json
 {
   "extraKnownMarketplaces": [
-    "PJuniszewski/juni-tools-marketplace"
+    "PJuniszewski/juni-skills-marketplace"
   ],
   "enabledPlugins": [
-    "juni-tools:context-guard"
+    "juni-skills:context-guard"
   ]
 }
 ```
@@ -167,10 +167,10 @@ v1.0.0  - Stable release
 
 ```bash
 # Install specific version
-claude /plugin install juni-tools:context-guard@v1.0.0
+claude /plugin install juni-skills:context-guard@v1.0.0
 
 # Install latest
-claude /plugin install juni-tools:context-guard
+claude /plugin install juni-skills:context-guard
 ```
 
 ### Marketplace Repository
@@ -198,7 +198,7 @@ Update the version in this README's Available Plugins table to reflect the new r
 Commit and push:
 
 ```bash
-cd juni-tools-marketplace
+cd juni-skills-marketplace
 git add README.md
 git commit -m "Update cook to v1.5.3"
 git push origin main
@@ -209,8 +209,8 @@ git push origin main
 Test the installation flow:
 
 ```bash
-# Fresh install test (run /plugin, select "Add Marketplace", enter: PJuniszewski/juni-tools-marketplace)
-claude /plugin install juni-tools:cook@v1.5.3
+# Fresh install test (run /plugin, select "Add Marketplace", enter: PJuniszewski/juni-skills-marketplace)
+claude /plugin install juni-skills:cook@v1.5.3
 claude /plugin enable cook
 
 # Verify plugin loads
@@ -227,7 +227,7 @@ Document changes in each plugin's CHANGELOG.md.
 
 | Repository | URL |
 |------------|-----|
-| Marketplace | [PJuniszewski/juni-tools-marketplace](https://github.com/PJuniszewski/juni-tools-marketplace) |
+| Marketplace | [PJuniszewski/juni-skills-marketplace](https://github.com/PJuniszewski/juni-skills-marketplace) |
 | cook | [PJuniszewski/cook](https://github.com/PJuniszewski/cook) |
 | context-guard | [PJuniszewski/context-guard](https://github.com/PJuniszewski/context-guard) |
 
