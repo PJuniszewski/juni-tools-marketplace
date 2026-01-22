@@ -1,0 +1,8 @@
+# juni-skills-marketplace CODEOWNERS
+# These owners will be requested for review on all PRs
+
+# Default: maintainer reviews all changes
+* @PJuniszewski
+
+# Plugin index requires explicit maintainer approval
+.claude-plugin/marketplace.json @PJuniszewski

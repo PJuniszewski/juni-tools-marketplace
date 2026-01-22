@@ -8,6 +8,7 @@
   "plugins": [
     {
       "name": "cook",
+      "category": "official",
       "description": "Feature development with guardrails. Enforces Plan, Review, Code, Ship workflow with multi-phase governance.",
       "source": {
         "source": "url",
@@ -17,6 +18,7 @@
     },
     {
       "name": "context-guard",
+      "category": "official",
       "description": "Context optimization for JSON data - lossless compression, token analysis, sampling warnings.",
       "source": {
         "source": "url",

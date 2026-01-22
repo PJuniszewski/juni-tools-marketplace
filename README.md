@@ -2,12 +2,31 @@
 
 A curated marketplace of Claude Code plugins for professional development workflows.
 
-## Available Plugins
+> **Security Notice:** Plugins execute with your full user permissions (filesystem, shell, environment variables). Official plugins are maintained by [@PJuniszewski](https://github.com/PJuniszewski). Community plugins are third-party contributions — review source code before enabling. This marketplace does NOT guarantee plugin safety.
+
+## Official Plugins
+
+Maintained by [@PJuniszewski](https://github.com/PJuniszewski).
 
 | Plugin | Description | Version |
 |--------|-------------|---------|
 | **cook** | Feature development with guardrails. Plan, Review, Code, Ship. | v1.5.3 |
 | **context-guard** | Context optimization for JSON data - lossless compression, token analysis, sampling warnings. | v1.0.0 |
+
+## Community Plugins
+
+Third-party contributions. Install at your own discretion.
+
+| Plugin | Author | Description | Version |
+|--------|--------|-------------|---------|
+| *No community plugins yet* | — | [Submit yours!](CONTRIBUTING.md) | — |
+
+## Contributing
+
+Want to add your plugin to the marketplace? See [CONTRIBUTING.md](CONTRIBUTING.md) for:
+- Plugin requirements checklist
+- Submission process
+- Review criteria
 
 ---
 
