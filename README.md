@@ -1,5 +1,8 @@
 # juni-skills-marketplace
 
+
+[![Validate marketplace plugins](https://github.com/PJuniszewski/juni-skills-marketplace/actions/workflows/validate.yml/badge.svg)](https://github.com/PJuniszewski/juni-skills-marketplace/actions/workflows/validate.yml)
+
 A curated marketplace of Claude Code plugins for professional development workflows.
 
 > **Security Notice:** Plugins execute with your full user permissions (filesystem, shell, environment variables). Official plugins are maintained by [@PJuniszewski](https://github.com/PJuniszewski). Community plugins are third-party contributions — review source code before enabling. This marketplace does NOT guarantee plugin safety.
@@ -20,6 +23,24 @@ Third-party contributions. Install at your own discretion.
 | Plugin | Author | Description | Version |
 |--------|--------|-------------|---------|
 | *No community plugins yet* | — | [Submit yours!](CONTRIBUTING.md) | — |
+
+## Validation
+
+All plugins in this marketplace are automatically validated via CI. The validator checks:
+
+- Plugin manifest exists (`plugin.json` or `.claude-plugin/plugin.json`)
+- Required files present (`README.md`, `LICENSE`)
+- Content directories exist (`commands/`, `hooks/`, `agents/`, or `skills/`)
+- No binary files or oversized repos
+- Valid marketplace entry format
+
+**Run validation locally:**
+
+```bash
+python scripts/validate-plugins.py
+```
+
+PRs that fail validation cannot be merged.
 
 ## Contributing
 

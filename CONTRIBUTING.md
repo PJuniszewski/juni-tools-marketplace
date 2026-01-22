@@ -42,7 +42,15 @@ cd juni-skills-marketplace
 
 ### 2. Add Your Plugin Entry
 
-Edit `.claude-plugin/marketplace.json` and add your plugin to the `plugins` array:
+Edit `.claude-plugin/marketplace.json` and add your plugin to the `plugins` array.
+
+**Your plugin repository must have:**
+- `plugin.json` or `.claude-plugin/plugin.json` (manifest with `name` field)
+- `README.md`
+- `LICENSE`
+- At least one content directory: `commands/`, `hooks/`, `agents/`, or `skills/`
+
+**Marketplace entry format:**
 
 ```json
 {
@@ -63,7 +71,24 @@ Edit `.claude-plugin/marketplace.json` and add your plugin to the `plugins` arra
 - Description should be concise (one sentence)
 - Tags help users discover your plugin
 
-### 3. Submit a Pull Request
+### 3. Run the Validator Locally
+
+Before submitting, run the validator to check your plugin:
+
+```bash
+python scripts/validate-plugins.py
+```
+
+The validator will:
+- Clone your plugin repository
+- Check for required files (manifest, README, LICENSE)
+- Verify content directories exist
+- Detect binary files and oversized repos
+- Report any issues
+
+Fix any errors before proceeding. Warnings are informational but should be reviewed.
+
+### 4. Submit a Pull Request
 
 ```bash
 git checkout -b add-your-plugin-name
@@ -74,7 +99,9 @@ gh pr create
 
 The PR template will auto-populate with a checklist. Complete all items.
 
-### 4. Address Review Feedback
+**Note:** CI will automatically run the validator. Your PR cannot be merged if validation fails.
+
+### 5. Address Review Feedback
 
 A maintainer will review your submission. Be prepared to:
 - Answer questions about your plugin's functionality
