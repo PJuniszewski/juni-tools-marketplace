@@ -1,30 +1,20 @@
 {
   "name": "juni-skills",
   "description": "Curated Claude Code plugins for professional development workflows",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "owner": {
     "name": "PJuniszewski"
   },
   "plugins": [
     {
-      "name": "cook",
+      "name": "juni",
       "category": "official",
-      "description": "Feature development with guardrails. Enforces Plan, Review, Code, Ship workflow with multi-phase governance.",
+      "description": "Juni Skills Suite - /juni:cook (feature workflows), /juni:guard (context safety), and more.",
       "source": {
         "source": "url",
         "url": "https://github.com/PJuniszewski/cook.git"
       },
-      "tags": ["workflow", "governance", "feature-development"]
-    },
-    {
-      "name": "context-guard",
-      "category": "official",
-      "description": "Context optimization for JSON data - lossless compression, token analysis, sampling warnings.",
-      "source": {
-        "source": "url",
-        "url": "https://github.com/PJuniszewski/context-guard.git"
-      },
-      "tags": ["tokens", "context", "hook", "guard", "epistemic", "safety", "forensics"]
+      "tags": ["workflow", "governance", "feature-development", "context-guard", "tokens", "safety"]
     }
   ]
 }
