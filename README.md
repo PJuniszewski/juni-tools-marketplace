@@ -11,8 +11,8 @@
 <!-- METADATA -->
 <p align="center">
   <img src="https://img.shields.io/badge/Curated-Official%20%2B%20Community-7c3aed" alt="Curated">
-  <img src="https://img.shields.io/badge/Plugins-2-ff69b4" alt="Plugins">
-  <img src="https://img.shields.io/badge/Version-1.0.0-blue" alt="Version">
+  <img src="https://img.shields.io/badge/Plugins-1-ff69b4" alt="Plugins">
+  <img src="https://img.shields.io/badge/Version-2.0.0-blue" alt="Version">
 </p>
 
 <!-- TRUST & SECURITY -->
@@ -52,8 +52,17 @@ Maintained by [@PJuniszewski](https://github.com/PJuniszewski).
 
 | Plugin | Description | Version | Repo |
 |--------|-------------|---------|------|
-| **cook** | Feature development with guardrails. Plan, Review, Code, Ship. | v1.5.3 | [View](https://github.com/PJuniszewski/cook) |
-| **context-guard** | Context optimization for JSON data - lossless compression, token analysis, sampling warnings. | v1.0.0 | [View](https://github.com/PJuniszewski/context-guard) |
+| **juni** | Juni Skills Suite - Feature development workflows (`/juni:cook`) + context safety (`/juni:guard`) | v2.0.0 | [View](https://github.com/PJuniszewski/cook) |
+
+### Commands in juni plugin
+
+| Command | Description |
+|---------|-------------|
+| `/juni:cook` | Structured feature development with planning phases |
+| `/juni:cook-menu` | Interactive artifact management |
+| `/juni:cook-stats` | Analytics and insights for cook artifacts |
+| `/juni:sous-chef` | Background monitoring for cooking discipline |
+| `/juni:guard` | Epistemic safety for JSON data in prompts |
 
 ## Community Plugins
 
@@ -77,11 +86,11 @@ claude /plugin
 ### 2. Install & Enable
 
 ```bash
-# Install plugins
-claude /plugin install juni-skills:cook juni-skills:context-guard
+# Install juni plugin
+claude /plugin install juni-skills:juni
 
-# Enable plugins
-claude /plugin enable cook context-guard
+# Enable plugin
+claude /plugin enable juni
 ```
 
 ### 3. Verify
@@ -102,8 +111,7 @@ Pre-configure plugins for your team in `.claude/settings.json`:
     "PJuniszewski/juni-skills-marketplace"
   ],
   "enabledPlugins": [
-    "juni-skills:cook",
-    "juni-skills:context-guard"
+    "juni-skills:juni"
   ]
 }
 ```
@@ -111,6 +119,29 @@ Pre-configure plugins for your team in `.claude/settings.json`:
 Team members automatically get marketplace access when they clone and run Claude Code.
 
 > **Note:** Organization policies may restrict plugin execution. Check with your org admin if plugins fail to load.
+
+---
+
+## Migration from v1.x
+
+If you had the old `cook` and `context-guard` plugins:
+
+```bash
+# Remove old plugins
+claude /plugin uninstall juni-skills:cook
+claude /plugin uninstall juni-skills:context-guard
+
+# Install unified plugin
+claude /plugin install juni-skills:juni
+claude /plugin enable juni
+```
+
+**Command changes:**
+| Old | New |
+|-----|-----|
+| `/cook` | `/juni:cook` |
+| `/cook-menu` | `/juni:cook-menu` |
+| `/guard` | `/juni:guard` |
 
 ---
 
