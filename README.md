@@ -1,15 +1,19 @@
 <p align="center">
-  <img src="assets/marketplace.png" alt="juni-skills-marketplace" width="400">
+  <img src="assets/marketplace.png" alt="juni-skills-marketplace" width="700">
 </p>
-
-<h1 align="center">juni-skills-marketplace</h1>
 
 <p align="center">
   <a href="https://github.com/PJuniszewski/juni-skills-marketplace/actions/workflows/validate.yml"><img src="https://github.com/PJuniszewski/juni-skills-marketplace/actions/workflows/validate.yml/badge.svg" alt="Validate marketplace plugins"></a>
+</p>
+
+<p align="center">
   <img src="https://img.shields.io/badge/Claude%20Code-Marketplace-black" alt="Marketplace">
   <img src="https://img.shields.io/badge/Curated-Official%20%2B%20Community-7c3aed" alt="Category">
   <img src="https://img.shields.io/badge/Plugins-2-ff69b4" alt="Plugins">
   <img src="https://img.shields.io/badge/Version-1.0.0-blue" alt="Version">
+</p>
+
+<p align="center">
   <img src="https://img.shields.io/badge/License-MIT-success" alt="License">
   <img src="https://img.shields.io/badge/Curated%20Marketplace-Yes-22c55e" alt="Curated">
 </p>
