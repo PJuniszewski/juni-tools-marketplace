@@ -9,12 +9,12 @@
     {
       "name": "juni",
       "category": "official",
-      "description": "Juni Skills Suite - /juni:cook (feature workflows), /juni:guard (context safety), and more.",
+      "description": "Juni Skills Suite - /juni:cook (feature workflows with Tasks API progress tracking), /juni:guard (context safety), and more.",
       "source": {
         "source": "url",
         "url": "https://github.com/PJuniszewski/cook.git"
       },
-      "tags": ["workflow", "governance", "feature-development", "context-guard", "tokens", "safety"]
+      "tags": ["workflow", "governance", "feature-development", "context-guard", "tokens", "safety", "tasks-api"]
     }
   ]
 }
