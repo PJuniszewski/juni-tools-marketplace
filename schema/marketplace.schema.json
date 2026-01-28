@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/PJuniszewski/juni-skills-marketplace/schema/marketplace.schema.json",
+  "title": "Claude Code Marketplace Index",
+  "description": "Schema for the marketplace index file that lists available plugins",
+  "type": "object",
+  "required": ["name", "version", "owner", "plugins"],
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Marketplace name"
+    },
+    "description": {
+      "type": "string",
+      "description": "Marketplace description"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$",
+      "description": "Marketplace version (semver)"
+    },
+    "owner": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Marketplace owner/maintainer"
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "Owner URL"
+        }
+      }
+    },
+    "plugins": {
+      "type": "array",
+      "minItems": 0,
+      "description": "List of plugins in this marketplace",
+      "items": {
+        "type": "object",
+        "required": ["name", "tier", "description", "source"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$",
+            "minLength": 2,
+            "maxLength": 64,
+            "description": "Plugin name (lowercase, hyphenated)"
+          },
+          "tier": {
+            "type": "string",
+            "enum": ["curated", "community"],
+            "description": "Plugin tier: curated (security-first, no network) or community (network via allowlist)"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 10,
+            "maxLength": 500,
+            "description": "Brief description"
+          },
+          "source": {
+            "type": "object",
+            "required": ["type", "url"],
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["git"],
+                "description": "Source type"
+              },
+              "url": {
+                "type": "string",
+                "pattern": "^https://github\\.com/[^/]+/[^/]+(\\.git)?$",
+                "description": "GitHub repository URL"
+              }
+            }
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]*$"
+            },
+            "uniqueItems": true,
+            "description": "Categorization tags"
+          },
+          "deprecated": {
+            "type": "boolean",
+            "description": "Whether this plugin is deprecated"
+          },
+          "deprecationMessage": {
+            "type": "string",
+            "description": "Message explaining deprecation and migration path"
+          }
+        }
+      }
+    }
+  }
+}

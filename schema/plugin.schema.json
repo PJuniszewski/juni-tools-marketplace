@@ -1,0 +1,188 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/PJuniszewski/juni-skills-marketplace/schema/plugin.schema.json",
+  "title": "Claude Code Plugin Manifest",
+  "description": "Schema for Claude Code plugin manifest files with tier-based security policies",
+  "type": "object",
+  "required": ["name", "version", "description", "policyTier", "capabilities"],
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "minLength": 2,
+      "maxLength": 64,
+      "description": "Plugin name (lowercase, hyphenated)"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$",
+      "description": "Semantic version (MAJOR.MINOR.PATCH)"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 10,
+      "maxLength": 500,
+      "description": "Brief description of the plugin"
+    },
+    "author": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "url": { "type": "string", "format": "uri" }
+      },
+      "additionalProperties": false
+    },
+    "license": {
+      "type": "string",
+      "description": "SPDX license identifier (e.g., MIT, Apache-2.0)"
+    },
+    "repository": {
+      "type": "string",
+      "format": "uri",
+      "description": "Source repository URL"
+    },
+    "policyTier": {
+      "type": "string",
+      "enum": ["curated", "community"],
+      "description": "Security tier: 'curated' (no network, security-first) or 'community' (network via allowlist)"
+    },
+    "capabilities": {
+      "type": "object",
+      "required": ["network"],
+      "additionalProperties": false,
+      "description": "Declared plugin capabilities and permissions",
+      "properties": {
+        "network": {
+          "type": "object",
+          "required": ["mode"],
+          "additionalProperties": false,
+          "description": "Network access declaration",
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": ["none", "allowlist"],
+              "description": "'none' = no network access (required for curated), 'allowlist' = specific domains only"
+            },
+            "domains": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$",
+                "description": "Allowed domain (no wildcards, no IPs, no protocols)"
+              },
+              "minItems": 1,
+              "uniqueItems": true,
+              "description": "Explicitly allowed domains (required when mode='allowlist')"
+            }
+          },
+          "allOf": [
+            {
+              "if": { "properties": { "mode": { "const": "allowlist" } } },
+              "then": { "required": ["domains"] }
+            },
+            {
+              "if": { "properties": { "mode": { "const": "none" } } },
+              "then": { "not": { "required": ["domains"] } }
+            }
+          ]
+        },
+        "filesystem": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Filesystem access patterns",
+          "properties": {
+            "read": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Paths/globs the plugin reads (e.g., './*.md', '.claude/')"
+            },
+            "write": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Paths/globs the plugin writes (e.g., 'cook/', '.claude/settings.json')"
+            }
+          }
+        },
+        "commands": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Shell command execution patterns",
+          "properties": {
+            "allow": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Allowed command patterns (e.g., 'git *', 'npm run *')"
+            },
+            "deny": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Denied command patterns (e.g., 'rm -rf', 'sudo *')"
+            }
+          }
+        },
+        "secrets": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Secret/environment variable requirements",
+          "properties": {
+            "required": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Required environment variables (e.g., 'OPENAI_API_KEY')"
+            },
+            "forbiddenPatterns": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Patterns that must not appear in plugin code"
+            }
+          }
+        }
+      }
+    },
+    "risk": {
+      "type": "object",
+      "description": "Risk metadata (required for community tier)",
+      "required": ["dataEgress"],
+      "additionalProperties": false,
+      "properties": {
+        "dataEgress": {
+          "type": "string",
+          "enum": ["low", "medium", "high"],
+          "description": "Data egress risk level"
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Additional risk notes for reviewers"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "policyTier": { "const": "curated" } }
+      },
+      "then": {
+        "properties": {
+          "capabilities": {
+            "properties": {
+              "network": {
+                "properties": { "mode": { "const": "none" } }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "policyTier": { "const": "community" } }
+      },
+      "then": {
+        "required": ["name", "version", "description", "policyTier", "capabilities", "risk"]
+      }
+    }
+  ]
+}

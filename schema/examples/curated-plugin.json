@@ -1,0 +1,30 @@
+{
+  "$comment": "Example curated plugin manifest - no network access allowed",
+  "name": "juni",
+  "version": "2.1.0",
+  "description": "Juni Skills Suite - Feature development workflows (/juni:cook) + context safety (/juni:guard)",
+  "author": {
+    "name": "PJuniszewski",
+    "url": "https://github.com/PJuniszewski"
+  },
+  "license": "MIT",
+  "repository": "https://github.com/PJuniszewski/cook",
+  "policyTier": "curated",
+  "capabilities": {
+    "network": {
+      "mode": "none"
+    },
+    "filesystem": {
+      "read": ["./**/*.md", ".claude/", "cook/"],
+      "write": ["cook/", ".claude/settings.json"]
+    },
+    "commands": {
+      "allow": ["git status", "git log *", "git diff *"],
+      "deny": ["rm -rf *", "sudo *"]
+    },
+    "secrets": {
+      "required": [],
+      "forbiddenPatterns": ["AWS_SECRET", "PRIVATE_KEY"]
+    }
+  }
+}
