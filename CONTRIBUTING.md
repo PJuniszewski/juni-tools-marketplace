@@ -2,34 +2,117 @@
 
 We welcome community plugin contributions! This document explains how to submit your plugin.
 
+## Choose Your Tier
+
+Before submitting, decide which tier fits your plugin:
+
+| Tier | When to Use | Network | Requirements |
+|------|-------------|---------|--------------|
+| **Curated** | Security-first, no external dependencies | None | No network code, maintainer review |
+| **Community** | Needs API access or external data | Allowlist only | Explicit domains, risk declaration |
+
+### Curated Tier
+
+Best for plugins that:
+- Work entirely offline
+- Process local files only
+- Don't need external APIs
+- Target team/production use
+
+### Community Tier
+
+Required for plugins that:
+- Call external APIs (GitHub, Jira, etc.)
+- Fetch remote data
+- Need any network access
+
+---
+
 ## Plugin Requirements
 
-Before submitting, ensure your plugin meets these requirements:
-
-### Required
+### Required for All Plugins
 
 - [ ] Public GitHub repository
-- [ ] Valid `plugin.json` manifest with required fields
-- [ ] README.md with:
-  - What the plugin does
-  - Installation command
-  - Example usage
-- [ ] License file (MIT or Apache 2.0 recommended)
+- [ ] Valid `plugin.json` manifest with new schema fields
+- [ ] README.md with installation and usage
+- [ ] LICENSE file (MIT or Apache 2.0 recommended)
 - [ ] At least one version tag (e.g., `v1.0.0`)
+- [ ] At least one content directory: `commands/`, `hooks/`, `agents/`, or `skills/`
 
-### Quality Bar
+### Required Manifest Fields
 
-- [ ] Plugin serves a clear, documented use case
-- [ ] Commands/skills have meaningful descriptions
-- [ ] No duplicate functionality with existing plugins
-- [ ] No binaries or large generated files committed
+```json
+{
+  "name": "your-plugin-name",
+  "version": "1.0.0",
+  "description": "Brief description of what your plugin does",
+  "policyTier": "curated",
+  "capabilities": {
+    "network": {
+      "mode": "none"
+    }
+  }
+}
+```
 
-### Security (CI Enforced)
+### Curated-Specific Requirements
 
-- [ ] No hardcoded credentials or secrets (API keys, tokens, passwords)
-- [ ] No obfuscated code
-- [ ] No telemetry or network code (banned - plugins must not phone home)
-- [ ] No data exfiltration to external servers
+- [ ] `policyTier: "curated"` in manifest
+- [ ] `capabilities.network.mode: "none"`
+- [ ] **No network code** in `commands/`, `hooks/`, `agents/`, `skills/`
+- [ ] No telemetry or analytics
+
+### Community-Specific Requirements
+
+- [ ] `policyTier: "community"` in manifest
+- [ ] `capabilities.network.mode: "allowlist"` with explicit domains
+- [ ] `risk.dataEgress: "low" | "medium" | "high"`
+- [ ] Domain allowlist (no wildcards, no IPs)
+
+**Example community manifest:**
+
+```json
+{
+  "name": "github-issues",
+  "version": "1.0.0",
+  "description": "Fetch and summarize GitHub issues for the current repository",
+  "policyTier": "community",
+  "capabilities": {
+    "network": {
+      "mode": "allowlist",
+      "domains": ["api.github.com"]
+    },
+    "filesystem": {
+      "read": [".git/config"],
+      "write": []
+    },
+    "secrets": {
+      "required": ["GITHUB_TOKEN"]
+    }
+  },
+  "risk": {
+    "dataEgress": "medium",
+    "notes": "Sends repository name to GitHub API"
+  }
+}
+```
+
+---
+
+## Domain Allowlist Rules
+
+For community plugins, domains must be:
+
+**Allowed:**
+- Explicit hostnames: `api.github.com`, `example.com`
+- Subdomains: `api.service.example.com`
+
+**Not Allowed:**
+- Wildcards: `*.example.com`
+- IP addresses: `192.168.1.1`
+- Protocols in domain: `https://example.com`
+
+---
 
 ## Submission Process
 
@@ -42,23 +125,15 @@ cd juni-skills-marketplace
 
 ### 2. Add Your Plugin Entry
 
-Edit `.claude-plugin/marketplace.json` and add your plugin to the `plugins` array.
-
-**Your plugin repository must have:**
-- `plugin.json` or `.claude-plugin/plugin.json` (manifest with `name` field)
-- `README.md`
-- `LICENSE`
-- At least one content directory: `commands/`, `hooks/`, `agents/`, or `skills/`
-
-**Marketplace entry format:**
+Edit `.claude-plugin/marketplace.json` and add your plugin:
 
 ```json
 {
   "name": "your-plugin-name",
-  "category": "community",
-  "description": "Brief description of what your plugin does (one sentence)",
+  "tier": "community",
+  "description": "Brief description (one sentence)",
   "source": {
-    "source": "url",
+    "type": "git",
     "url": "https://github.com/YourUsername/your-plugin.git"
   },
   "tags": ["relevant", "tags"]
@@ -66,29 +141,26 @@ Edit `.claude-plugin/marketplace.json` and add your plugin to the `plugins` arra
 ```
 
 **Important:**
-- Use `"category": "community"` for all community submissions
-- Plugin name should be lowercase with hyphens (e.g., `my-cool-plugin`)
-- Description should be concise (one sentence)
-- Tags help users discover your plugin
+- Use `"tier": "curated"` or `"tier": "community"`
+- Plugin name must be lowercase with hyphens
+- Description should be concise
 
 ### 3. Run the Validator Locally
-
-Before submitting, run the validator to check your plugin:
 
 ```bash
 python scripts/validate-plugins.py
 ```
 
 The validator will:
-- Clone your plugin repository
-- Check for required files (manifest, README, LICENSE)
-- Verify content directories exist
-- Detect binary files and oversized repos
-- **Scan for hardcoded secrets** (API keys, tokens, passwords)
-- **Scan for network/telemetry code** (requests, fetch, urllib - banned)
-- Report any issues
+1. Clone your plugin repository
+2. Validate manifest against schema
+3. Check tier policy compliance
+4. Scan for secrets (HARD FAIL)
+5. Scan for network code (enforced per tier)
+6. Scan for telemetry (HARD FAIL)
+7. Check consistency (declared vs detected)
 
-Fix any errors before proceeding. Warnings are informational but should be reviewed.
+**Fix any errors before proceeding.**
 
 ### 4. Submit a Pull Request
 
@@ -99,59 +171,100 @@ git commit -m "feat: Add your-plugin-name to community plugins"
 gh pr create
 ```
 
-The PR template will auto-populate with a checklist. Complete all items.
-
-**Note:** CI will automatically run the validator. Your PR cannot be merged if validation fails.
-
 ### 5. Address Review Feedback
 
-A maintainer will review your submission. Be prepared to:
-- Answer questions about your plugin's functionality
-- Make changes if issues are found
-- Provide additional documentation if needed
+A maintainer will review:
+- Security scan results
+- Manifest accuracy
+- Domain allowlist (for community)
+- Risk declaration accuracy
+
+---
 
 ## Security Policy
 
-**Plugins execute with the user's full permissions.** This marketplace enforces strict security controls.
+### Always Blocked (All Tiers)
 
-### Banned
+- **Hardcoded secrets** - API keys, tokens, passwords, private keys
+- **Telemetry/analytics** - PostHog, Sentry, Segment, etc.
+- **Obfuscated code** - Minified or encoded payloads
 
-- **Network code**: No `requests`, `urllib`, `fetch`, `axios`, `http.client`, `aiohttp`, `httpx`
-- **Telemetry**: No analytics, tracking, or "phoning home"
-- **Secrets**: No hardcoded API keys, tokens, passwords, or private keys
-- **Data exfiltration**: No sending user data to external servers
+### Curated-Specific Blocks
 
-### Why No Network Code?
+- **All network code** - requests, fetch, curl, urllib, axios
+- **Socket usage** - Python socket module
+- **Shell network commands** - wget, nc, ssh, scp
 
-Plugins should operate locally. If your plugin needs external data:
-1. Have the user provide it via environment variables or config files
-2. Use Claude Code's built-in tools (WebFetch, etc.) which the user can audit
+### Community-Specific Rules
+
+- Network code **allowed only if**:
+  - `capabilities.network.mode: "allowlist"`
+  - All domains explicitly declared
+  - `risk.dataEgress` specified
+- Detected domains must match declared domains
 
 ### Enforcement
 
-- CI automatically scans plugin content directories (`commands/`, `hooks/`, `agents/`, `skills/`)
-- Secrets detection catches: AWS keys, GitHub tokens, passwords, private keys, bearer tokens
-- Network detection catches: HTTP libraries, fetch calls, WebSocket, analytics URLs
+All checks are enforced at PR validation time:
+
+| Check | Curated | Community |
+|-------|---------|-----------|
+| Secrets | HARD FAIL | HARD FAIL |
+| Telemetry | HARD FAIL | HARD FAIL |
+| Network code | HARD FAIL | Allowed with allowlist |
+| Undeclared domains | N/A | HARD FAIL |
 
 **Malicious plugins will be removed and authors banned.**
+
+---
+
+## Declaring Network Domains
+
+If your community plugin needs network access:
+
+1. List all domains your code accesses
+2. Add them to `capabilities.network.domains`
+3. Specify risk level in `risk.dataEgress`
+4. Add notes explaining data flow
+
+```json
+{
+  "capabilities": {
+    "network": {
+      "mode": "allowlist",
+      "domains": [
+        "api.github.com",
+        "api.linear.app"
+      ]
+    }
+  },
+  "risk": {
+    "dataEgress": "medium",
+    "notes": "Sends repository name and issue IDs to GitHub/Linear APIs"
+  }
+}
+```
+
+---
 
 ## Review Timeline
 
 - Initial review: 3-5 business days
 - Complex plugins may take longer
-- You'll receive feedback via PR comments
+- Community plugins require additional security review
+
+---
 
 ## After Approval
 
-Once merged, your plugin will appear in:
-- The "Community Plugins" section of the README
-- The marketplace index (`marketplace.json`)
+Once merged:
+- Plugin appears in [CATALOG.md](CATALOG.md)
+- Users can install via: `claude /plugin install juni-skills:your-plugin-name`
 
-Users can install via:
-```bash
-claude /plugin install juni-skills:your-plugin-name
-```
+---
 
 ## Questions?
 
-Open an issue for questions about the contribution process.
+- Open an issue for questions about contribution process
+- See [schema/examples/](schema/examples/) for manifest examples
+- See [marketplace/](marketplace/) for tier documentation

@@ -5,6 +5,8 @@ on:
     paths:
       - ".claude-plugin/marketplace.json"
       - "scripts/**"
+      - "schema/**"
+      - "marketplace/**"
       - ".github/workflows/validate.yml"
   push:
     branches: [ main ]
@@ -26,3 +28,16 @@ jobs:
 
       - name: Validate plugins
         run: python scripts/validate-plugins.py
+
+      - name: Validate JSON schemas are valid JSON
+        run: |
+          for schema in schema/*.json; do
+            echo "Validating $schema..."
+            python -c "import json; json.load(open('$schema'))"
+          done
+
+      - name: Check CATALOG.md is up to date
+        run: |
+          if [ -f scripts/generate-catalog.py ]; then
+            python scripts/generate-catalog.py --check
+          fi

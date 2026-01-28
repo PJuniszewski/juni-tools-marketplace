@@ -1,0 +1,37 @@
+{
+  "$comment": "Example community plugin manifest - network allowed via explicit allowlist",
+  "name": "github-issues",
+  "version": "1.0.0",
+  "description": "Fetch and summarize GitHub issues for the current repository",
+  "author": {
+    "name": "ExampleContributor",
+    "url": "https://github.com/ExampleContributor"
+  },
+  "license": "MIT",
+  "repository": "https://github.com/ExampleContributor/claude-github-issues",
+  "policyTier": "community",
+  "capabilities": {
+    "network": {
+      "mode": "allowlist",
+      "domains": [
+        "api.github.com"
+      ]
+    },
+    "filesystem": {
+      "read": [".git/config", "package.json"],
+      "write": []
+    },
+    "commands": {
+      "allow": ["git remote -v"],
+      "deny": []
+    },
+    "secrets": {
+      "required": ["GITHUB_TOKEN"],
+      "forbiddenPatterns": []
+    }
+  },
+  "risk": {
+    "dataEgress": "medium",
+    "notes": "Sends repository name to GitHub API. Requires GITHUB_TOKEN from user environment."
+  }
+}

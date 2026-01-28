@@ -1,16 +1,31 @@
 #!/usr/bin/env python3
+"""
+Marketplace plugin validator with tiered security policies.
+
+Validates:
+- Marketplace schema (marketplace.json)
+- Plugin manifests (plugin.json) against JSON schema
+- Tier-specific policies (curated vs community)
+- Security scanning (secrets, network, telemetry)
+- Consistency checks (declared vs detected capabilities)
+
+Exit codes:
+- 0: All plugins pass validation
+- 1: One or more plugins failed validation
+"""
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional, Set
+from typing import Dict, List, Tuple, Optional, Set, Any
 
 ROOT = Path(__file__).resolve().parents[1]
 MARKETPLACE_FILE = ROOT / ".claude-plugin" / "marketplace.json"
+SCHEMA_DIR = ROOT / "schema"
 TMP_DIR = ROOT / ".tmp_plugin_validation"
 
 # =========================
@@ -22,8 +37,8 @@ MAX_REPO_SIZE_BYTES = 20 * 1024 * 1024     # 20MB total repo hard fail (excludin
 MAX_FILES_COUNT = 2500                     # avoid huge repos
 MAX_READ_BYTES_FOR_BINARY_CHECK = 4096
 
-ALLOWED_CATEGORIES = {"official", "community"}
-ALLOWED_SOURCE_TYPES = {"url"}
+ALLOWED_TIERS = {"curated", "community"}
+ALLOWED_SOURCE_TYPES = {"git"}
 
 REQUIRED_FILES = ["README.md", "LICENSE"]
 POSSIBLE_PLUGIN_MANIFESTS = ["plugin.json", ".claude-plugin/plugin.json"]
@@ -53,8 +68,9 @@ SKIP_DIRS = {
 }
 
 SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+(-[0-9A-Za-z\.-]+)?(\+[0-9A-Za-z\.-]+)?$")
-
 GITHUB_REPO_RE = re.compile(r"^https://github\.com/[^/]+/[^/]+(\.git)?$")
+PLUGIN_NAME_RE = re.compile(r"^[a-z][a-z0-9-]*$")
+DOMAIN_RE = re.compile(r"^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$")
 
 # =========================
 # SECURITY PATTERNS
@@ -86,8 +102,8 @@ SECRET_PATTERNS = [
     (r"(?i)secret\s*[=:]\s*['\"][a-zA-Z0-9_\-]{16,}['\"]", "Secret assignment"),
 ]
 
-# Network/telemetry patterns (BANNED - no phoning home)
-NETWORK_PATTERNS = [
+# Network/telemetry patterns - code libraries
+NETWORK_CODE_PATTERNS = [
     # Python
     (r"^\s*import\s+requests\b", "requests import"),
     (r"^\s*from\s+requests\s+import", "requests import"),
@@ -98,29 +114,61 @@ NETWORK_PATTERNS = [
     (r"^\s*import\s+httpx", "httpx import"),
     (r"requests\.(get|post|put|delete|patch)\s*\(", "requests HTTP call"),
     (r"urllib\.request\.(urlopen|Request)", "urllib HTTP call"),
+    (r"^\s*import\s+socket\b", "socket import"),
+    (r"^\s*from\s+socket\s+import", "socket import"),
     # JavaScript/TypeScript
     (r"\bfetch\s*\(", "fetch() call"),
     (r"\baxios\s*[\.\(]", "axios call"),
     (r"new\s+XMLHttpRequest", "XMLHttpRequest"),
     (r"\.ajax\s*\(", "jQuery ajax call"),
-    # URLs that look like telemetry/analytics
-    (r"https?://[^'\"\s]*(?:analytics|telemetry|tracking|metrics|beacon)[^'\"\s]*", "Analytics/telemetry URL"),
-    # WebSocket (could be used for data exfiltration)
+    (r"require\s*\(\s*['\"]https?['\"]", "Node http/https require"),
+    (r"from\s+['\"]node:https?['\"]", "Node http/https import"),
+    # WebSocket
     (r"\bWebSocket\s*\(", "WebSocket connection"),
     (r"^\s*import\s+websocket", "websocket import"),
 ]
 
+# Shell network commands
+SHELL_NETWORK_PATTERNS = [
+    (r"\bcurl\s+", "curl command"),
+    (r"\bwget\s+", "wget command"),
+    (r"\bnc\s+", "netcat (nc) command"),
+    (r"\bncat\s+", "ncat command"),
+    (r"\bsocat\s+", "socat command"),
+    (r"\bssh\s+", "ssh command"),
+    (r"\bscp\s+", "scp command"),
+    (r"\brsync\s+.*:", "rsync remote command"),
+    (r"Invoke-WebRequest", "PowerShell Invoke-WebRequest"),
+    (r"Invoke-RestMethod", "PowerShell Invoke-RestMethod"),
+    (r"\btelnet\s+", "telnet command"),
+]
+
+# Telemetry/analytics patterns (always blocked)
+TELEMETRY_PATTERNS = [
+    (r"https?://[^'\"\s]*(?:posthog|segment|amplitude|mixpanel)[^'\"\s]*", "Analytics service URL"),
+    (r"https?://[^'\"\s]*(?:sentry\.io|bugsnag|rollbar)[^'\"\s]*", "Error tracking URL"),
+    (r"https?://[^'\"\s]*(?:analytics|telemetry|tracking|metrics|beacon)[^'\"\s]*", "Analytics/telemetry URL"),
+    (r"(?i)posthog\.capture", "PostHog tracking call"),
+    (r"(?i)analytics\.track", "Analytics tracking call"),
+    (r"(?i)Sentry\.init", "Sentry initialization"),
+]
+
+# Combined network patterns for general scanning
+NETWORK_PATTERNS = NETWORK_CODE_PATTERNS + SHELL_NETWORK_PATTERNS + TELEMETRY_PATTERNS
+
 # Files to scan for security issues
-SCANNABLE_EXTENSIONS = {".py", ".js", ".ts", ".sh", ".bash", ".zsh", ".rb", ".go", ".rs"}
+SCANNABLE_EXTENSIONS = {".py", ".js", ".ts", ".sh", ".bash", ".zsh", ".rb", ".go", ".rs", ".ps1"}
 
 
 @dataclass
 class PluginResult:
     name: str
-    category: str
+    tier: str
     url: str
-    errors: List[str]
-    warnings: List[str]
+    errors: List[str] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
+    network_detected: bool = False
+    detected_domains: Set[str] = field(default_factory=set)
 
 
 def run(cmd: List[str], cwd: Optional[Path] = None) -> Tuple[int, str]:
@@ -172,8 +220,6 @@ def is_probably_binary(path: Path) -> bool:
             chunk = f.read(MAX_READ_BYTES_FOR_BINARY_CHECK)
         if b"\x00" in chunk:
             return True
-        # heuristic: if many bytes are non-printable
-        # allow newlines/tabs/carriage returns
         printable = set(range(32, 127)) | {9, 10, 13}
         if not chunk:
             return False
@@ -181,14 +227,12 @@ def is_probably_binary(path: Path) -> bool:
         ratio = non_printable / max(1, len(chunk))
         return ratio > 0.35
     except Exception:
-        # if can't read, treat as suspicious
         return True
 
 
 def walk_repo_files(repo_path: Path) -> List[Path]:
     files: List[Path] = []
     for root, dirs, filenames in os.walk(repo_path):
-        # prune dirs
         dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
         for fn in filenames:
             files.append(Path(root) / fn)
@@ -205,8 +249,14 @@ def get_repo_size_bytes(files: List[Path]) -> int:
     return total
 
 
+# =========================
+# SCHEMA VALIDATION
+# =========================
+
 def validate_marketplace_schema(marketplace: dict) -> List[str]:
+    """Validate marketplace.json structure."""
     errors = []
+
     name = marketplace.get("name")
     if not name or not isinstance(name, str):
         errors.append("marketplace.name missing or invalid")
@@ -220,10 +270,10 @@ def validate_marketplace_schema(marketplace: dict) -> List[str]:
         errors.append("marketplace.owner.name missing")
 
     plugins = marketplace.get("plugins")
-    if not isinstance(plugins, list) or len(plugins) == 0:
-        errors.append("marketplace.plugins must be a non-empty array")
+    if not isinstance(plugins, list):
+        errors.append("marketplace.plugins must be an array")
 
-    # ensure plugin names unique
+    # Ensure plugin names unique
     seen: Set[str] = set()
     if isinstance(plugins, list):
         for p in plugins:
@@ -237,15 +287,167 @@ def validate_marketplace_schema(marketplace: dict) -> List[str]:
     return errors
 
 
-def parse_plugin_entry(plugin: dict) -> Tuple[Optional[str], Optional[str], Optional[str], List[str]]:
+def validate_plugin_manifest_schema(manifest: dict, tier: str) -> Tuple[List[str], List[str]]:
+    """
+    Validate plugin manifest against schema rules.
+    Lightweight validation without external jsonschema dependency.
+
+    Returns (errors, warnings).
+    Supports legacy manifests without policyTier/capabilities (with warnings).
+    """
     errors = []
+    warnings = []
+
+    # Core required fields (always required)
+    for field in ["name"]:
+        if field not in manifest:
+            errors.append(f"manifest missing required field: {field}")
+
+    # Recommended fields (warn if missing)
+    for field in ["version", "description"]:
+        if field not in manifest:
+            warnings.append(f"manifest missing recommended field: {field}")
+
+    # New schema fields (warn if missing for backward compatibility)
+    is_legacy = False
+    if "policyTier" not in manifest:
+        warnings.append(f"manifest missing policyTier field (legacy manifest). Assuming tier='{tier}' from marketplace entry.")
+        is_legacy = True
+    if "capabilities" not in manifest:
+        warnings.append("manifest missing capabilities field (legacy manifest). Assuming network.mode='none'.")
+        is_legacy = True
+
+    # Name format
+    name = manifest.get("name", "")
+    if name and not PLUGIN_NAME_RE.match(name):
+        warnings.append(f"manifest.name should be lowercase with hyphens: '{name}'")
+
+    # Version format
+    version = manifest.get("version", "")
+    if version and not SEMVER_RE.match(version):
+        warnings.append(f"manifest.version should be semver: '{version}'")
+
+    # Policy tier validation (if present)
+    policy_tier = manifest.get("policyTier")
+    if policy_tier:
+        if policy_tier not in ALLOWED_TIERS:
+            errors.append(f"manifest.policyTier must be one of: {sorted(ALLOWED_TIERS)}")
+        elif policy_tier != tier:
+            errors.append(f"manifest.policyTier '{policy_tier}' does not match marketplace tier '{tier}'")
+
+    # Capabilities validation (if present)
+    caps = manifest.get("capabilities")
+    if caps is not None:
+        if not isinstance(caps, dict):
+            errors.append("manifest.capabilities must be an object")
+        else:
+            # Network capability validation
+            network = caps.get("network", {})
+            if not isinstance(network, dict):
+                errors.append("manifest.capabilities.network must be an object")
+            else:
+                mode = network.get("mode")
+                if mode is not None and mode not in ["none", "allowlist"]:
+                    errors.append("manifest.capabilities.network.mode must be 'none' or 'allowlist'")
+
+                domains = network.get("domains", [])
+                if mode == "allowlist":
+                    if not domains or not isinstance(domains, list):
+                        errors.append("manifest.capabilities.network.domains required when mode is 'allowlist'")
+                    else:
+                        for d in domains:
+                            if not isinstance(d, str):
+                                errors.append(f"domain must be string: {d}")
+                            elif not DOMAIN_RE.match(d):
+                                errors.append(f"invalid domain format (no wildcards, no IPs, no protocols): '{d}'")
+                            elif d.startswith("*."):
+                                errors.append(f"wildcard domains not allowed: '{d}'")
+                            elif re.match(r"^\d+\.\d+\.\d+\.\d+$", d):
+                                errors.append(f"IP addresses not allowed as domains: '{d}'")
+                elif mode == "none" and domains:
+                    errors.append("manifest.capabilities.network.domains should not be present when mode is 'none'")
+
+    # Risk metadata (required for community with new schema)
+    effective_tier = policy_tier or tier
+    risk = manifest.get("risk")
+    if effective_tier == "community" and not is_legacy:
+        if not risk:
+            errors.append("manifest.risk required for community tier plugins")
+        elif not isinstance(risk, dict):
+            errors.append("manifest.risk must be an object")
+        else:
+            egress = risk.get("dataEgress")
+            if egress not in ["low", "medium", "high"]:
+                errors.append("manifest.risk.dataEgress must be 'low', 'medium', or 'high'")
+
+    return errors, warnings
+
+
+def validate_tier_policy(manifest: dict, tier: str, is_legacy: bool = False) -> List[str]:
+    """Enforce tier-specific policy rules."""
+    errors = []
+
+    # For legacy manifests, assume network.mode='none' (curated default)
+    caps = manifest.get("capabilities", {})
+    network = caps.get("network", {}) if caps else {}
+    mode = network.get("mode", "none") if network else "none"
+
+    if tier == "curated":
+        # Curated plugins must have network.mode = "none"
+        if mode != "none":
+            errors.append(
+                f"TIER POLICY: curated plugins must have capabilities.network.mode='none', "
+                f"found '{mode}'. Remove network access or move to community tier."
+            )
+
+        # Curated plugins should not have risk metadata (or it should be low)
+        risk = manifest.get("risk", {})
+        if risk and risk.get("dataEgress") in ["medium", "high"]:
+            errors.append(
+                f"TIER POLICY: curated plugins cannot have medium/high risk. "
+                f"Found risk.dataEgress='{risk.get('dataEgress')}'"
+            )
+
+    elif tier == "community":
+        # Community plugins with network must use allowlist
+        if mode not in ["none", "allowlist"]:
+            errors.append(
+                f"TIER POLICY: community plugins must use network.mode='none' or 'allowlist', "
+                f"found '{mode}'"
+            )
+
+        # If allowlist, domains must be specified
+        if mode == "allowlist":
+            domains = network.get("domains", [])
+            if not domains:
+                errors.append(
+                    "TIER POLICY: community plugins with network.mode='allowlist' must "
+                    "declare explicit domains in capabilities.network.domains"
+                )
+
+    return errors
+
+
+# =========================
+# MARKETPLACE ENTRY PARSING
+# =========================
+
+def parse_plugin_entry(plugin: dict) -> Tuple[Optional[str], Optional[str], Optional[str], List[str]]:
+    """Parse and validate a plugin entry from marketplace.json."""
+    errors = []
+
     name = plugin.get("name")
     if not name or not isinstance(name, str):
         errors.append("plugin.name missing or invalid")
+    elif not PLUGIN_NAME_RE.match(name):
+        errors.append(f"plugin.name must be lowercase with hyphens: '{name}'")
 
-    category = plugin.get("category")
-    if category not in ALLOWED_CATEGORIES:
-        errors.append(f"plugin.category must be one of: {sorted(ALLOWED_CATEGORIES)}")
+    # Support both 'tier' (new) and 'category' (legacy) for backward compatibility
+    tier = plugin.get("tier") or plugin.get("category")
+    if tier == "official":
+        tier = "curated"  # Map legacy 'official' to 'curated'
+    if tier not in ALLOWED_TIERS:
+        errors.append(f"plugin.tier must be one of: {sorted(ALLOWED_TIERS)}")
 
     tags = plugin.get("tags", [])
     if tags is None:
@@ -256,32 +458,217 @@ def parse_plugin_entry(plugin: dict) -> Tuple[Optional[str], Optional[str], Opti
     src = plugin.get("source", {})
     url = None
     if isinstance(src, dict):
-        source_type = src.get("source")
+        # Support both 'type' (new) and 'source' (legacy) for backward compatibility
+        source_type = src.get("type") or src.get("source")
+        if source_type == "url":
+            source_type = "git"  # Map legacy 'url' to 'git'
         if source_type not in ALLOWED_SOURCE_TYPES:
-            errors.append(f"plugin.source.source must be one of: {sorted(ALLOWED_SOURCE_TYPES)}")
+            errors.append(f"plugin.source.type must be one of: {sorted(ALLOWED_SOURCE_TYPES)}")
         url = src.get("url")
 
     if not url or not isinstance(url, str) or not url.startswith("http"):
         errors.append("plugin.source.url missing or invalid")
 
-    # URL quality check
     if url and isinstance(url, str):
         if url.endswith(".git"):
             pass
         elif GITHUB_REPO_RE.match(url):
             pass
         else:
-            # allow other git hosts too, but warn
             errors.append("plugin.source.url must be a valid GitHub repo URL or end with .git")
 
-    return name, category, url, errors
+    return name, tier, url, errors
 
+
+# =========================
+# SECURITY SCANNING
+# =========================
+
+def scan_file_for_secrets(file_path: Path, content: str) -> List[Tuple[int, str, str]]:
+    """Scan file content for hardcoded secrets."""
+    findings: List[Tuple[int, str, str]] = []
+    lines = content.split("\n")
+
+    for line_num, line in enumerate(lines, 1):
+        stripped = line.strip()
+        if stripped.startswith("#") or stripped.startswith("//") or stripped.startswith("*"):
+            continue
+
+        for pattern, name in SECRET_PATTERNS:
+            if re.search(pattern, line):
+                match = re.search(pattern, line)
+                if match:
+                    matched = match.group(0)
+                    if len(matched) > 20:
+                        matched = matched[:8] + "..." + matched[-4:]
+                    findings.append((line_num, name, matched))
+
+    return findings
+
+
+def scan_file_for_network(file_path: Path, content: str) -> List[Tuple[int, str, str]]:
+    """Scan file content for network/telemetry code."""
+    findings: List[Tuple[int, str, str]] = []
+    lines = content.split("\n")
+
+    for line_num, line in enumerate(lines, 1):
+        stripped = line.strip()
+        if stripped.startswith("#") or stripped.startswith("//") or stripped.startswith("*"):
+            continue
+
+        for pattern, name in NETWORK_PATTERNS:
+            if re.search(pattern, line):
+                match = re.search(pattern, line)
+                if match:
+                    matched = match.group(0)[:50]
+                    findings.append((line_num, name, matched))
+
+    return findings
+
+
+def scan_file_for_telemetry(file_path: Path, content: str) -> List[Tuple[int, str, str]]:
+    """Scan specifically for telemetry/analytics (always blocked)."""
+    findings: List[Tuple[int, str, str]] = []
+    lines = content.split("\n")
+
+    for line_num, line in enumerate(lines, 1):
+        stripped = line.strip()
+        if stripped.startswith("#") or stripped.startswith("//") or stripped.startswith("*"):
+            continue
+
+        for pattern, name in TELEMETRY_PATTERNS:
+            if re.search(pattern, line):
+                match = re.search(pattern, line)
+                if match:
+                    matched = match.group(0)[:50]
+                    findings.append((line_num, name, matched))
+
+    return findings
+
+
+def security_scan_repo(
+    repo_path: Path,
+    files: List[Path],
+    tier: str,
+    allowed_domains: Set[str]
+) -> Tuple[List[str], List[str], bool, Set[str]]:
+    """
+    Scan repository for security issues.
+    Returns (errors, warnings, network_detected, detected_domains).
+    """
+    errors: List[str] = []
+    warnings: List[str] = []
+    network_detected = False
+    detected_domains: Set[str] = set()
+
+    content_dirs = {"commands", "hooks", "agents", "skills"}
+
+    for f in files:
+        if f.suffix.lower() not in SCANNABLE_EXTENSIONS:
+            continue
+
+        try:
+            rel_parts = f.relative_to(repo_path).parts
+            if not rel_parts or rel_parts[0] not in content_dirs:
+                continue
+        except ValueError:
+            continue
+
+        try:
+            content = f.read_text(encoding="utf-8", errors="ignore")
+            rel = f.relative_to(repo_path)
+
+            # Check for secrets (HARD FAIL for all tiers)
+            secret_findings = scan_file_for_secrets(f, content)
+            for line_num, name, matched in secret_findings:
+                errors.append(
+                    f"SECURITY: Hardcoded secret detected & rejected by validator in {rel}:{line_num} - {name}"
+                )
+
+            # Check for telemetry (HARD FAIL for all tiers)
+            telemetry_findings = scan_file_for_telemetry(f, content)
+            for line_num, name, matched in telemetry_findings:
+                errors.append(
+                    f"SECURITY: Telemetry/analytics detected & rejected by validator in {rel}:{line_num} - {name}"
+                )
+
+            # Check for network code
+            network_findings = scan_file_for_network(f, content)
+            if network_findings:
+                network_detected = True
+
+                for line_num, name, matched in network_findings:
+                    # Skip if it's a telemetry finding (already handled above)
+                    is_telemetry = any(
+                        re.search(tp[0], matched) for tp in TELEMETRY_PATTERNS
+                    )
+                    if is_telemetry:
+                        continue
+
+                    if tier == "curated":
+                        # Curated: all network code is banned
+                        errors.append(
+                            f"SECURITY: Network code detected & rejected by validator in {rel}:{line_num} - {name}. "
+                            f"Curated plugins must not use network. Remove network code or move to community tier."
+                        )
+                    else:
+                        # Community: warn but allow if domains declared
+                        warnings.append(
+                            f"Network code in {rel}:{line_num} - {name}. "
+                            f"Ensure all accessed domains are declared in manifest."
+                        )
+
+                    # Try to extract domains from URLs in the line
+                    url_match = re.search(r'https?://([^/\s\'"]+)', content.split("\n")[line_num - 1])
+                    if url_match:
+                        detected_domains.add(url_match.group(1))
+
+        except Exception as e:
+            warnings.append(f"Could not security scan {f.relative_to(repo_path)}: {e}")
+
+    return errors, warnings, network_detected, detected_domains
+
+
+def check_consistency(
+    tier: str,
+    manifest: dict,
+    network_detected: bool,
+    detected_domains: Set[str]
+) -> List[str]:
+    """Check consistency between declared capabilities and detected usage."""
+    errors = []
+
+    caps = manifest.get("capabilities", {})
+    network = caps.get("network", {})
+    declared_mode = network.get("mode", "none")
+    declared_domains = set(network.get("domains", []))
+
+    # If network detected but manifest says mode=none -> inconsistency
+    if network_detected and declared_mode == "none":
+        errors.append(
+            "CONSISTENCY: Network code detected in plugin but manifest declares "
+            "capabilities.network.mode='none'. Either remove network code or "
+            "update manifest to mode='allowlist' with explicit domains."
+        )
+
+    # For community with allowlist, check if detected domains are declared
+    if tier == "community" and declared_mode == "allowlist" and detected_domains:
+        undeclared = detected_domains - declared_domains
+        if undeclared:
+            errors.append(
+                f"CONSISTENCY: Detected network access to domains not in allowlist: "
+                f"{sorted(undeclared)}. Add these to capabilities.network.domains or remove access."
+            )
+
+    return errors
+
+
+# =========================
+# PLUGIN REPO VALIDATION
+# =========================
 
 def extract_command_names(repo_path: Path) -> Set[str]:
-    """
-    Best-effort command name extraction for future-proofing.
-    We assume commands live in commands/*.md and command name equals filename stem.
-    """
+    """Extract command names from commands directory."""
     cmds: Set[str] = set()
     cmd_dir = repo_path / "commands"
     if not cmd_dir.exists() or not cmd_dir.is_dir():
@@ -293,106 +680,17 @@ def extract_command_names(repo_path: Path) -> Set[str]:
     return cmds
 
 
-def scan_file_for_secrets(file_path: Path, content: str) -> List[Tuple[int, str, str]]:
+def validate_plugin_repo(
+    repo_path: Path,
+    tier: str
+) -> Tuple[List[str], List[str], Set[str], Optional[dict], bool, Set[str]]:
     """
-    Scan file content for hardcoded secrets.
-    Returns list of (line_number, pattern_name, matched_text).
-    """
-    findings: List[Tuple[int, str, str]] = []
-    lines = content.split("\n")
-
-    for line_num, line in enumerate(lines, 1):
-        # Skip comments (basic heuristic)
-        stripped = line.strip()
-        if stripped.startswith("#") or stripped.startswith("//") or stripped.startswith("*"):
-            continue
-
-        for pattern, name in SECRET_PATTERNS:
-            if re.search(pattern, line):
-                # Truncate match for display
-                match = re.search(pattern, line)
-                if match:
-                    matched = match.group(0)
-                    # Redact middle of secrets for safety
-                    if len(matched) > 20:
-                        matched = matched[:8] + "..." + matched[-4:]
-                    findings.append((line_num, name, matched))
-
-    return findings
-
-
-def scan_file_for_network(file_path: Path, content: str) -> List[Tuple[int, str, str]]:
-    """
-    Scan file content for network/telemetry code.
-    Returns list of (line_number, pattern_name, matched_text).
-    """
-    findings: List[Tuple[int, str, str]] = []
-    lines = content.split("\n")
-
-    for line_num, line in enumerate(lines, 1):
-        # Skip comments
-        stripped = line.strip()
-        if stripped.startswith("#") or stripped.startswith("//") or stripped.startswith("*"):
-            continue
-
-        for pattern, name in NETWORK_PATTERNS:
-            if re.search(pattern, line):
-                match = re.search(pattern, line)
-                if match:
-                    matched = match.group(0)[:50]  # Truncate long matches
-                    findings.append((line_num, name, matched))
-
-    return findings
-
-
-def security_scan_repo(repo_path: Path, files: List[Path]) -> Tuple[List[str], List[str]]:
-    """
-    Scan repository for security issues: secrets and network/telemetry code.
-    Only scans plugin content directories (commands/, hooks/, agents/, skills/).
-    Development scripts and other files are not scanned.
-    Returns (errors, warnings).
+    Validate a cloned plugin repository.
+    Returns (errors, warnings, commands, manifest, network_detected, detected_domains).
     """
     errors: List[str] = []
     warnings: List[str] = []
-
-    # Only scan files in plugin content directories
-    content_dirs = {"commands", "hooks", "agents", "skills"}
-
-    for f in files:
-        if f.suffix.lower() not in SCANNABLE_EXTENSIONS:
-            continue
-
-        # Check if file is in a content directory
-        try:
-            rel_parts = f.relative_to(repo_path).parts
-            if not rel_parts or rel_parts[0] not in content_dirs:
-                continue  # Skip files outside content directories
-        except ValueError:
-            continue
-
-        try:
-            content = f.read_text(encoding="utf-8", errors="ignore")
-            rel = f.relative_to(repo_path)
-
-            # Check for secrets (HARD FAIL)
-            secret_findings = scan_file_for_secrets(f, content)
-            for line_num, name, matched in secret_findings:
-                errors.append(f"SECURITY: Hardcoded secret in {rel}:{line_num} - {name}")
-
-            # Check for network/telemetry (HARD FAIL - telemetry banned)
-            network_findings = scan_file_for_network(f, content)
-            for line_num, name, matched in network_findings:
-                errors.append(f"SECURITY: Network/telemetry code in {rel}:{line_num} - {name}")
-
-        except Exception as e:
-            warnings.append(f"Could not security scan {f.relative_to(repo_path)}: {e}")
-
-    return errors, warnings
-
-
-def validate_plugin_repo(repo_path: Path) -> Tuple[List[str], List[str], Set[str]]:
-    errors: List[str] = []
-    warnings: List[str] = []
+    manifest_data: Optional[dict] = None
 
     # Required: manifest exists
     manifest = exists_any(repo_path, POSSIBLE_PLUGIN_MANIFESTS)
@@ -409,18 +707,35 @@ def validate_plugin_repo(repo_path: Path) -> Tuple[List[str], List[str], Set[str
     if not has_content:
         errors.append(f"No content dirs found (expected one of: {POSSIBLE_CONTENT_DIRS})")
 
-    # Validate plugin.json minimal fields (if present)
+    # Parse and validate manifest
+    allowed_domains: Set[str] = set()
+    is_legacy = False
     if manifest:
         try:
-            data = json.loads((repo_path / manifest).read_text(encoding="utf-8"))
-            if "name" not in data:
-                errors.append(f"{manifest} missing required field: name")
-            if "description" not in data:
-                warnings.append(f"{manifest} missing recommended field: description")
-            if "version" not in data:
-                warnings.append(f"{manifest} missing recommended field: version")
-        except Exception as e:
+            manifest_data = json.loads((repo_path / manifest).read_text(encoding="utf-8"))
+
+            # Validate manifest schema (returns errors, warnings)
+            schema_errors, schema_warnings = validate_plugin_manifest_schema(manifest_data, tier)
+            errors.extend(schema_errors)
+            warnings.extend(schema_warnings)
+
+            # Check if legacy manifest
+            is_legacy = "policyTier" not in manifest_data or "capabilities" not in manifest_data
+
+            # Validate tier policy
+            policy_errors = validate_tier_policy(manifest_data, tier, is_legacy)
+            errors.extend(policy_errors)
+
+            # Extract allowed domains for security scanning
+            caps = manifest_data.get("capabilities", {})
+            if caps:
+                network = caps.get("network", {})
+                allowed_domains = set(network.get("domains", []))
+
+        except json.JSONDecodeError as e:
             errors.append(f"Invalid JSON in {manifest}: {e}")
+        except Exception as e:
+            errors.append(f"Error reading {manifest}: {e}")
 
     # Deep scan: file sizes, binaries, repo size
     files = walk_repo_files(repo_path)
@@ -435,7 +750,6 @@ def validate_plugin_repo(repo_path: Path) -> Tuple[List[str], List[str], Set[str
         )
 
     for f in files:
-        # ignore symlinks
         try:
             if f.is_symlink():
                 warnings.append(f"Symlink detected: {f.relative_to(repo_path)} (review manually)")
@@ -451,11 +765,9 @@ def validate_plugin_repo(repo_path: Path) -> Tuple[List[str], List[str], Set[str
 
             ext = f.suffix.lower()
 
-            # strongly disallow heavy/binary blobs
             if ext in DISALLOWED_EXTENSIONS:
                 errors.append(f"Disallowed file type in repo: {rel} ({ext})")
 
-            # binary detection (for unknown or suspicious ext)
             if ext not in TEXT_EXTENSIONS and size > 0:
                 if is_probably_binary(f):
                     errors.append(f"Binary/suspicious file detected: {rel}")
@@ -467,13 +779,24 @@ def validate_plugin_repo(repo_path: Path) -> Tuple[List[str], List[str], Set[str
     if len(commands) == 0:
         warnings.append("No commands detected under commands/ (ok if plugin uses hooks/agents only)")
 
-    # Security scan: secrets and network/telemetry
-    sec_errors, sec_warnings = security_scan_repo(repo_path, files)
+    # Security scan
+    sec_errors, sec_warnings, network_detected, detected_domains = security_scan_repo(
+        repo_path, files, tier, allowed_domains
+    )
     errors.extend(sec_errors)
     warnings.extend(sec_warnings)
 
-    return errors, warnings, commands
+    # Consistency check
+    if manifest_data:
+        consistency_errors = check_consistency(tier, manifest_data, network_detected, detected_domains)
+        errors.extend(consistency_errors)
 
+    return errors, warnings, commands, manifest_data, network_detected, detected_domains
+
+
+# =========================
+# MAIN
+# =========================
 
 def main() -> int:
     marketplace = load_marketplace()
@@ -486,23 +809,26 @@ def main() -> int:
         return 1
 
     plugins = marketplace.get("plugins", [])
+
+    if not plugins:
+        print("✅ Marketplace validated (no plugins to check)")
+        return 0
+
     ensure_tmp()
 
     results: List[PluginResult] = []
-    all_command_index: Dict[str, List[str]] = {}  # command -> [plugin names] (warning only)
+    all_command_index: Dict[str, List[str]] = {}
 
     for idx, plugin in enumerate(plugins):
-        name, category, url, entry_errors = parse_plugin_entry(plugin)
+        name, tier, url, entry_errors = parse_plugin_entry(plugin)
 
-        # Guard if entry invalid
-        if entry_errors or not name or not category or not url:
+        if entry_errors or not name or not tier or not url:
             results.append(
                 PluginResult(
                     name=name or f"plugin_{idx}",
-                    category=category or "unknown",
+                    tier=tier or "unknown",
                     url=url or "missing",
                     errors=entry_errors or ["Invalid marketplace entry"],
-                    warnings=[],
                 )
             )
             continue
@@ -510,69 +836,96 @@ def main() -> int:
         safe_dir = name.replace("/", "_").replace(":", "_")
         dest = TMP_DIR / safe_dir
 
-        print(f"🔎 Validating: {name} ({category}) -> {url}")
+        tier_badge = "🔒" if tier == "curated" else "🌐"
+        print(f"{tier_badge} Validating: {name} [{tier}] -> {url}")
 
-        errors: List[str] = []
-        warnings: List[str] = []
+        result = PluginResult(name=name, tier=tier, url=url)
 
         success, clone_error = clone_repo(url, dest)
         if not success:
-            errors.append(clone_error)
+            result.errors.append(clone_error)
             print(f"❌ FAIL: {name}")
-            results.append(PluginResult(name=name, category=category, url=url, errors=errors, warnings=warnings))
+            results.append(result)
             continue
 
         try:
-            repo_errors, repo_warnings, cmd_names = validate_plugin_repo(dest)
-            errors.extend(repo_errors)
-            warnings.extend(repo_warnings)
+            repo_errors, repo_warnings, cmd_names, manifest, net_detected, det_domains = validate_plugin_repo(
+                dest, tier
+            )
+            result.errors.extend(repo_errors)
+            result.warnings.extend(repo_warnings)
+            result.network_detected = net_detected
+            result.detected_domains = det_domains
 
-            # collect command names for cross-plugin collision warnings
             for c in cmd_names:
                 all_command_index.setdefault(c, []).append(name)
 
-            if errors:
+            if result.errors:
                 print(f"❌ FAIL: {name}")
             else:
                 print(f"✅ OK: {name}")
 
         except Exception as e:
-            errors.append(f"Unhandled error: {e}")
+            result.errors.append(f"Unhandled error: {e}")
             print(f"❌ FAIL: {name}")
 
-        results.append(PluginResult(name=name, category=category, url=url, errors=errors, warnings=warnings))
+        results.append(result)
 
     cleanup_tmp()
 
-    # Cross-plugin command collision warnings (not a hard fail because plugins are namespaced)
+    # Cross-plugin command collision warnings
     collisions = {cmd: pls for cmd, pls in all_command_index.items() if len(pls) > 1}
 
     failed = [r for r in results if r.errors]
     passed = [r for r in results if not r.errors]
 
-    print("\n====================")
-    print("📦 Validation report")
-    print("====================\n")
+    print("\n" + "=" * 60)
+    print("📦 Validation Report")
+    print("=" * 60 + "\n")
+
+    # Summary by tier
+    curated_count = len([r for r in results if r.tier == "curated"])
+    community_count = len([r for r in results if r.tier == "community"])
+    print(f"Plugins: {len(results)} total ({curated_count} curated, {community_count} community)\n")
 
     for r in results:
-        print(f"• {r.name} [{r.category}]")
-        print(f"  url: {r.url}")
+        tier_badge = "🔒" if r.tier == "curated" else "🌐"
+        status = "❌" if r.errors else "✅"
+        print(f"{status} {r.name} [{r.tier}] {tier_badge}")
+        print(f"   url: {r.url}")
+
         if r.errors:
             for e in r.errors:
-                print(f"  ❌ {e}")
+                print(f"   ❌ {e}")
         if r.warnings:
             for w in r.warnings:
-                print(f"  ⚠️  {w}")
-        print("")
+                print(f"   ⚠️  {w}")
+
+        if r.tier == "community" and r.network_detected:
+            print(f"   📡 Network usage detected")
+            if r.detected_domains:
+                print(f"   📡 Detected domains: {sorted(r.detected_domains)}")
+
+        print()
 
     if collisions:
         print("⚠️  Command name collisions detected (warning only):")
         for cmd, pls in sorted(collisions.items(), key=lambda x: x[0]):
-            print(f"  - '{cmd}' appears in: {', '.join(pls)}")
-        print("  Note: This is usually OK because Claude Code namespaces commands by plugin name.\n")
+            print(f"   - '{cmd}' appears in: {', '.join(pls)}")
+        print("   Note: Usually OK - Claude Code namespaces commands by plugin name.\n")
 
+    print("=" * 60)
     print(f"✅ Passed: {len(passed)}")
     print(f"❌ Failed: {len(failed)}")
+    print("=" * 60)
+
+    if failed:
+        print("\n💡 Remediation hints:")
+        print("   - Secrets: Remove hardcoded credentials, use environment variables")
+        print("   - Network (curated): Remove network code or move plugin to community tier")
+        print("   - Network (community): Declare all domains in capabilities.network.domains")
+        print("   - Telemetry: Remove all analytics/tracking code (not allowed in any tier)")
+        print("   - Consistency: Ensure manifest matches actual code behavior")
 
     return 1 if failed else 0
 

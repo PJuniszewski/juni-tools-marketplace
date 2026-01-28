@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Unit tests for validate-plugins.py security scanning functions.
+Unit tests for validate-plugins.py security scanning and tier policy functions.
 
 Run with: python -m pytest scripts/test_validator.py -v
 Or:       python scripts/test_validator.py
@@ -18,6 +18,10 @@ validator = import_module("validate-plugins")
 
 scan_file_for_secrets = validator.scan_file_for_secrets
 scan_file_for_network = validator.scan_file_for_network
+scan_file_for_telemetry = validator.scan_file_for_telemetry
+validate_plugin_manifest_schema = validator.validate_plugin_manifest_schema
+validate_tier_policy = validator.validate_tier_policy
+check_consistency = validator.check_consistency
 
 
 class TestSecretsDetection(unittest.TestCase):
@@ -56,7 +60,6 @@ class TestSecretsDetection(unittest.TestCase):
         self.assertTrue(len(findings) > 0, "Should detect bearer token")
 
     def test_slack_token(self):
-        # Use clearly fake token pattern that won't trigger GitHub secret scanning
         content = 'SLACK_TOKEN = "xoxb-fake-fake-fake"'
         findings = scan_file_for_secrets(Path("test.py"), content)
         self.assertTrue(len(findings) > 0, "Should detect Slack token")
@@ -64,7 +67,6 @@ class TestSecretsDetection(unittest.TestCase):
     def test_no_false_positive_on_placeholder(self):
         content = 'api_key = os.environ.get("API_KEY")'
         findings = scan_file_for_secrets(Path("test.py"), content)
-        # This should NOT trigger (no actual secret value)
         self.assertEqual(len(findings), 0, "Should not flag env var lookup")
 
     def test_no_false_positive_on_comment(self):
@@ -162,6 +164,270 @@ def process_data(data):
         findings = scan_file_for_network(Path("test.py"), content)
         self.assertEqual(len(findings), 0, "Clean file should have no findings")
 
+    # New tests for shell commands
+    def test_curl_command(self):
+        content = 'curl -X POST https://api.example.com/data'
+        findings = scan_file_for_network(Path("test.sh"), content)
+        self.assertTrue(len(findings) > 0, "Should detect curl command")
+
+    def test_wget_command(self):
+        content = 'wget https://example.com/file.txt'
+        findings = scan_file_for_network(Path("test.sh"), content)
+        self.assertTrue(len(findings) > 0, "Should detect wget command")
+
+    def test_netcat_command(self):
+        content = 'nc -l 8080'
+        findings = scan_file_for_network(Path("test.sh"), content)
+        self.assertTrue(len(findings) > 0, "Should detect netcat command")
+
+    def test_socket_import(self):
+        content = 'import socket'
+        findings = scan_file_for_network(Path("test.py"), content)
+        self.assertTrue(len(findings) > 0, "Should detect socket import")
+
+
+class TestTelemetryDetection(unittest.TestCase):
+    """Test telemetry-specific detection (always blocked)."""
+
+    def test_posthog_url(self):
+        content = 'url = "https://app.posthog.com/capture"'
+        findings = scan_file_for_telemetry(Path("test.py"), content)
+        self.assertTrue(len(findings) > 0, "Should detect PostHog URL")
+
+    def test_sentry_url(self):
+        content = 'dsn = "https://abc@sentry.io/123"'
+        findings = scan_file_for_telemetry(Path("test.py"), content)
+        self.assertTrue(len(findings) > 0, "Should detect Sentry URL")
+
+    def test_segment_url(self):
+        content = 'endpoint = "https://api.segment.io/v1/track"'
+        findings = scan_file_for_telemetry(Path("test.py"), content)
+        self.assertTrue(len(findings) > 0, "Should detect Segment URL")
+
+    def test_posthog_capture_call(self):
+        content = 'posthog.capture("event_name", properties)'
+        findings = scan_file_for_telemetry(Path("test.py"), content)
+        self.assertTrue(len(findings) > 0, "Should detect PostHog capture call")
+
+    def test_analytics_track_call(self):
+        content = 'analytics.track("page_view")'
+        findings = scan_file_for_telemetry(Path("test.js"), content)
+        self.assertTrue(len(findings) > 0, "Should detect analytics.track call")
+
+    def test_sentry_init(self):
+        content = 'Sentry.init({ dsn: "..." })'
+        findings = scan_file_for_telemetry(Path("test.js"), content)
+        self.assertTrue(len(findings) > 0, "Should detect Sentry.init")
+
+
+class TestManifestSchemaValidation(unittest.TestCase):
+    """Test plugin manifest schema validation."""
+
+    def test_valid_curated_manifest(self):
+        manifest = {
+            "name": "test-plugin",
+            "version": "1.0.0",
+            "description": "A test plugin for validation",
+            "policyTier": "curated",
+            "capabilities": {
+                "network": {"mode": "none"}
+            }
+        }
+        errors, warnings = validate_plugin_manifest_schema(manifest, "curated")
+        self.assertEqual(len(errors), 0, f"Valid manifest should pass: {errors}")
+
+    def test_valid_community_manifest(self):
+        manifest = {
+            "name": "test-plugin",
+            "version": "1.0.0",
+            "description": "A test plugin for validation",
+            "policyTier": "community",
+            "capabilities": {
+                "network": {
+                    "mode": "allowlist",
+                    "domains": ["api.github.com"]
+                }
+            },
+            "risk": {
+                "dataEgress": "medium"
+            }
+        }
+        errors, warnings = validate_plugin_manifest_schema(manifest, "community")
+        self.assertEqual(len(errors), 0, f"Valid manifest should pass: {errors}")
+
+    def test_legacy_manifest_warns(self):
+        """Legacy manifests without policyTier/capabilities should warn, not error."""
+        manifest = {
+            "name": "legacy-plugin",
+            "version": "1.0.0",
+            "description": "A legacy plugin"
+        }
+        errors, warnings = validate_plugin_manifest_schema(manifest, "curated")
+        self.assertEqual(len(errors), 0, "Legacy manifest should not error")
+        self.assertTrue(len(warnings) > 0, "Legacy manifest should warn")
+        self.assertTrue(any("legacy" in w.lower() for w in warnings))
+
+    def test_invalid_name_format(self):
+        manifest = {
+            "name": "Test_Plugin",  # Invalid: uppercase and underscore
+            "version": "1.0.0",
+            "description": "Test plugin",
+            "policyTier": "curated",
+            "capabilities": {"network": {"mode": "none"}}
+        }
+        errors, warnings = validate_plugin_manifest_schema(manifest, "curated")
+        self.assertTrue(any("lowercase with hyphens" in w for w in warnings))
+
+    def test_invalid_version_format(self):
+        manifest = {
+            "name": "test-plugin",
+            "version": "v1.0",  # Invalid semver
+            "description": "Test plugin",
+            "policyTier": "curated",
+            "capabilities": {"network": {"mode": "none"}}
+        }
+        errors, warnings = validate_plugin_manifest_schema(manifest, "curated")
+        self.assertTrue(any("semver" in w for w in warnings))
+
+    def test_tier_mismatch(self):
+        manifest = {
+            "name": "test-plugin",
+            "version": "1.0.0",
+            "description": "Test plugin",
+            "policyTier": "community",  # Mismatch with tier="curated"
+            "capabilities": {"network": {"mode": "none"}}
+        }
+        errors, warnings = validate_plugin_manifest_schema(manifest, "curated")
+        self.assertTrue(any("does not match" in e for e in errors))
+
+    def test_wildcard_domain_rejected(self):
+        manifest = {
+            "name": "test-plugin",
+            "version": "1.0.0",
+            "description": "Test plugin",
+            "policyTier": "community",
+            "capabilities": {
+                "network": {
+                    "mode": "allowlist",
+                    "domains": ["*.example.com"]  # Wildcards not allowed
+                }
+            },
+            "risk": {"dataEgress": "low"}
+        }
+        errors, warnings = validate_plugin_manifest_schema(manifest, "community")
+        self.assertTrue(any("wildcard" in e.lower() for e in errors))
+
+    def test_ip_address_domain_rejected(self):
+        manifest = {
+            "name": "test-plugin",
+            "version": "1.0.0",
+            "description": "Test plugin",
+            "policyTier": "community",
+            "capabilities": {
+                "network": {
+                    "mode": "allowlist",
+                    "domains": ["192.168.1.1"]  # IPs not allowed
+                }
+            },
+            "risk": {"dataEgress": "low"}
+        }
+        errors, warnings = validate_plugin_manifest_schema(manifest, "community")
+        self.assertTrue(any("IP address" in e for e in errors))
+
+    def test_community_requires_risk(self):
+        manifest = {
+            "name": "test-plugin",
+            "version": "1.0.0",
+            "description": "Test plugin",
+            "policyTier": "community",
+            "capabilities": {
+                "network": {"mode": "none"}
+            }
+            # Missing risk field
+        }
+        errors, warnings = validate_plugin_manifest_schema(manifest, "community")
+        self.assertTrue(any("risk required" in e for e in errors))
+
+
+class TestTierPolicyValidation(unittest.TestCase):
+    """Test tier-specific policy enforcement."""
+
+    def test_curated_must_have_no_network(self):
+        manifest = {
+            "capabilities": {
+                "network": {"mode": "allowlist", "domains": ["api.example.com"]}
+            }
+        }
+        errors = validate_tier_policy(manifest, "curated")
+        self.assertTrue(len(errors) > 0, "Curated with network should fail")
+        self.assertTrue(any("curated plugins must have" in e for e in errors))
+
+    def test_curated_cannot_have_high_risk(self):
+        manifest = {
+            "capabilities": {"network": {"mode": "none"}},
+            "risk": {"dataEgress": "high"}
+        }
+        errors = validate_tier_policy(manifest, "curated")
+        self.assertTrue(any("medium/high risk" in e for e in errors))
+
+    def test_community_allows_network_with_allowlist(self):
+        manifest = {
+            "capabilities": {
+                "network": {
+                    "mode": "allowlist",
+                    "domains": ["api.github.com"]
+                }
+            }
+        }
+        errors = validate_tier_policy(manifest, "community")
+        self.assertEqual(len(errors), 0, "Community with allowlist should pass")
+
+    def test_community_requires_domains_for_allowlist(self):
+        manifest = {
+            "capabilities": {
+                "network": {"mode": "allowlist"}  # Missing domains
+            }
+        }
+        errors = validate_tier_policy(manifest, "community")
+        self.assertTrue(any("declare explicit domains" in e for e in errors))
+
+
+class TestConsistencyChecks(unittest.TestCase):
+    """Test consistency between declared and detected capabilities."""
+
+    def test_network_detected_but_declared_none(self):
+        manifest = {
+            "capabilities": {
+                "network": {"mode": "none"}
+            }
+        }
+        errors = check_consistency("curated", manifest, network_detected=True, detected_domains=set())
+        self.assertTrue(len(errors) > 0, "Should detect inconsistency")
+        self.assertTrue(any("CONSISTENCY" in e for e in errors))
+
+    def test_undeclared_domains_detected(self):
+        manifest = {
+            "capabilities": {
+                "network": {
+                    "mode": "allowlist",
+                    "domains": ["api.github.com"]
+                }
+            }
+        }
+        detected = {"api.github.com", "unknown.example.com"}
+        errors = check_consistency("community", manifest, network_detected=True, detected_domains=detected)
+        self.assertTrue(len(errors) > 0, "Should detect undeclared domain")
+        self.assertTrue(any("unknown.example.com" in e for e in errors))
+
+    def test_no_error_when_consistent(self):
+        manifest = {
+            "capabilities": {
+                "network": {"mode": "none"}
+            }
+        }
+        errors = check_consistency("curated", manifest, network_detected=False, detected_domains=set())
+        self.assertEqual(len(errors), 0, "Consistent manifest should pass")
+
 
 class TestEdgeCases(unittest.TestCase):
     """Test edge cases and combined scenarios."""
@@ -202,17 +468,22 @@ def run_tests():
 
     suite.addTests(loader.loadTestsFromTestCase(TestSecretsDetection))
     suite.addTests(loader.loadTestsFromTestCase(TestNetworkDetection))
+    suite.addTests(loader.loadTestsFromTestCase(TestTelemetryDetection))
+    suite.addTests(loader.loadTestsFromTestCase(TestManifestSchemaValidation))
+    suite.addTests(loader.loadTestsFromTestCase(TestTierPolicyValidation))
+    suite.addTests(loader.loadTestsFromTestCase(TestConsistencyChecks))
     suite.addTests(loader.loadTestsFromTestCase(TestEdgeCases))
 
     runner = unittest.TextTestRunner(verbosity=2)
     result = runner.run(suite)
 
     print("\n" + "=" * 50)
+    total = result.testsRun
     if result.wasSuccessful():
-        print("✅ All tests passed!")
+        print(f"✅ All {total} tests passed!")
         return 0
     else:
-        print(f"❌ {len(result.failures)} failures, {len(result.errors)} errors")
+        print(f"❌ {len(result.failures)} failures, {len(result.errors)} errors out of {total} tests")
         return 1
 
 
