@@ -287,73 +287,90 @@ def validate_marketplace_schema(marketplace: dict) -> List[str]:
     return errors
 
 
-def validate_plugin_manifest_schema(manifest: dict, tier: str) -> List[str]:
+def validate_plugin_manifest_schema(manifest: dict, tier: str) -> Tuple[List[str], List[str]]:
     """
     Validate plugin manifest against schema rules.
     Lightweight validation without external jsonschema dependency.
+
+    Returns (errors, warnings).
+    Supports legacy manifests without policyTier/capabilities (with warnings).
     """
     errors = []
+    warnings = []
 
-    # Required fields
-    for field in ["name", "version", "description", "policyTier", "capabilities"]:
+    # Core required fields (always required)
+    for field in ["name"]:
         if field not in manifest:
             errors.append(f"manifest missing required field: {field}")
+
+    # Recommended fields (warn if missing)
+    for field in ["version", "description"]:
+        if field not in manifest:
+            warnings.append(f"manifest missing recommended field: {field}")
+
+    # New schema fields (warn if missing for backward compatibility)
+    is_legacy = False
+    if "policyTier" not in manifest:
+        warnings.append(f"manifest missing policyTier field (legacy manifest). Assuming tier='{tier}' from marketplace entry.")
+        is_legacy = True
+    if "capabilities" not in manifest:
+        warnings.append("manifest missing capabilities field (legacy manifest). Assuming network.mode='none'.")
+        is_legacy = True
 
     # Name format
     name = manifest.get("name", "")
     if name and not PLUGIN_NAME_RE.match(name):
-        errors.append(f"manifest.name must be lowercase with hyphens: '{name}'")
+        warnings.append(f"manifest.name should be lowercase with hyphens: '{name}'")
 
     # Version format
     version = manifest.get("version", "")
     if version and not SEMVER_RE.match(version):
-        errors.append(f"manifest.version must be semver: '{version}'")
+        warnings.append(f"manifest.version should be semver: '{version}'")
 
-    # Policy tier
+    # Policy tier validation (if present)
     policy_tier = manifest.get("policyTier")
-    if policy_tier and policy_tier not in ALLOWED_TIERS:
-        errors.append(f"manifest.policyTier must be one of: {sorted(ALLOWED_TIERS)}")
+    if policy_tier:
+        if policy_tier not in ALLOWED_TIERS:
+            errors.append(f"manifest.policyTier must be one of: {sorted(ALLOWED_TIERS)}")
+        elif policy_tier != tier:
+            errors.append(f"manifest.policyTier '{policy_tier}' does not match marketplace tier '{tier}'")
 
-    # Tier consistency with marketplace entry
-    if policy_tier and tier and policy_tier != tier:
-        errors.append(f"manifest.policyTier '{policy_tier}' does not match marketplace tier '{tier}'")
-
-    # Capabilities validation
-    caps = manifest.get("capabilities", {})
-    if not isinstance(caps, dict):
-        errors.append("manifest.capabilities must be an object")
-        return errors
-
-    # Network capability (required)
-    network = caps.get("network", {})
-    if not isinstance(network, dict):
-        errors.append("manifest.capabilities.network must be an object")
-    else:
-        mode = network.get("mode")
-        if mode not in ["none", "allowlist"]:
-            errors.append("manifest.capabilities.network.mode must be 'none' or 'allowlist'")
-
-        domains = network.get("domains", [])
-        if mode == "allowlist":
-            if not domains or not isinstance(domains, list):
-                errors.append("manifest.capabilities.network.domains required when mode is 'allowlist'")
+    # Capabilities validation (if present)
+    caps = manifest.get("capabilities")
+    if caps is not None:
+        if not isinstance(caps, dict):
+            errors.append("manifest.capabilities must be an object")
+        else:
+            # Network capability validation
+            network = caps.get("network", {})
+            if not isinstance(network, dict):
+                errors.append("manifest.capabilities.network must be an object")
             else:
-                for d in domains:
-                    if not isinstance(d, str):
-                        errors.append(f"domain must be string: {d}")
-                    elif not DOMAIN_RE.match(d):
-                        errors.append(f"invalid domain format (no wildcards, no IPs, no protocols): '{d}'")
-                    elif d.startswith("*."):
-                        errors.append(f"wildcard domains not allowed: '{d}'")
-                    elif re.match(r"^\d+\.\d+\.\d+\.\d+$", d):
-                        errors.append(f"IP addresses not allowed as domains: '{d}'")
-        elif mode == "none" and domains:
-            errors.append("manifest.capabilities.network.domains should not be present when mode is 'none'")
+                mode = network.get("mode")
+                if mode is not None and mode not in ["none", "allowlist"]:
+                    errors.append("manifest.capabilities.network.mode must be 'none' or 'allowlist'")
 
-    # Risk metadata (required for community)
+                domains = network.get("domains", [])
+                if mode == "allowlist":
+                    if not domains or not isinstance(domains, list):
+                        errors.append("manifest.capabilities.network.domains required when mode is 'allowlist'")
+                    else:
+                        for d in domains:
+                            if not isinstance(d, str):
+                                errors.append(f"domain must be string: {d}")
+                            elif not DOMAIN_RE.match(d):
+                                errors.append(f"invalid domain format (no wildcards, no IPs, no protocols): '{d}'")
+                            elif d.startswith("*."):
+                                errors.append(f"wildcard domains not allowed: '{d}'")
+                            elif re.match(r"^\d+\.\d+\.\d+\.\d+$", d):
+                                errors.append(f"IP addresses not allowed as domains: '{d}'")
+                elif mode == "none" and domains:
+                    errors.append("manifest.capabilities.network.domains should not be present when mode is 'none'")
+
+    # Risk metadata (required for community with new schema)
     effective_tier = policy_tier or tier
     risk = manifest.get("risk")
-    if effective_tier == "community":
+    if effective_tier == "community" and not is_legacy:
         if not risk:
             errors.append("manifest.risk required for community tier plugins")
         elif not isinstance(risk, dict):
@@ -363,16 +380,17 @@ def validate_plugin_manifest_schema(manifest: dict, tier: str) -> List[str]:
             if egress not in ["low", "medium", "high"]:
                 errors.append("manifest.risk.dataEgress must be 'low', 'medium', or 'high'")
 
-    return errors
+    return errors, warnings
 
 
-def validate_tier_policy(manifest: dict, tier: str) -> List[str]:
+def validate_tier_policy(manifest: dict, tier: str, is_legacy: bool = False) -> List[str]:
     """Enforce tier-specific policy rules."""
     errors = []
 
+    # For legacy manifests, assume network.mode='none' (curated default)
     caps = manifest.get("capabilities", {})
-    network = caps.get("network", {})
-    mode = network.get("mode", "none")
+    network = caps.get("network", {}) if caps else {}
+    mode = network.get("mode", "none") if network else "none"
 
     if tier == "curated":
         # Curated plugins must have network.mode = "none"
@@ -691,30 +709,28 @@ def validate_plugin_repo(
 
     # Parse and validate manifest
     allowed_domains: Set[str] = set()
+    is_legacy = False
     if manifest:
         try:
             manifest_data = json.loads((repo_path / manifest).read_text(encoding="utf-8"))
 
-            # Validate manifest schema
-            schema_errors = validate_plugin_manifest_schema(manifest_data, tier)
+            # Validate manifest schema (returns errors, warnings)
+            schema_errors, schema_warnings = validate_plugin_manifest_schema(manifest_data, tier)
             errors.extend(schema_errors)
+            warnings.extend(schema_warnings)
+
+            # Check if legacy manifest
+            is_legacy = "policyTier" not in manifest_data or "capabilities" not in manifest_data
 
             # Validate tier policy
-            policy_errors = validate_tier_policy(manifest_data, tier)
+            policy_errors = validate_tier_policy(manifest_data, tier, is_legacy)
             errors.extend(policy_errors)
 
             # Extract allowed domains for security scanning
             caps = manifest_data.get("capabilities", {})
-            network = caps.get("network", {})
-            allowed_domains = set(network.get("domains", []))
-
-            # Basic field checks
-            if "name" not in manifest_data:
-                errors.append(f"{manifest} missing required field: name")
-            if "description" not in manifest_data:
-                warnings.append(f"{manifest} missing recommended field: description")
-            if "version" not in manifest_data:
-                warnings.append(f"{manifest} missing recommended field: version")
+            if caps:
+                network = caps.get("network", {})
+                allowed_domains = set(network.get("domains", []))
 
         except json.JSONDecodeError as e:
             errors.append(f"Invalid JSON in {manifest}: {e}")

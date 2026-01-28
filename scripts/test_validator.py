@@ -233,7 +233,7 @@ class TestManifestSchemaValidation(unittest.TestCase):
                 "network": {"mode": "none"}
             }
         }
-        errors = validate_plugin_manifest_schema(manifest, "curated")
+        errors, warnings = validate_plugin_manifest_schema(manifest, "curated")
         self.assertEqual(len(errors), 0, f"Valid manifest should pass: {errors}")
 
     def test_valid_community_manifest(self):
@@ -252,14 +252,20 @@ class TestManifestSchemaValidation(unittest.TestCase):
                 "dataEgress": "medium"
             }
         }
-        errors = validate_plugin_manifest_schema(manifest, "community")
+        errors, warnings = validate_plugin_manifest_schema(manifest, "community")
         self.assertEqual(len(errors), 0, f"Valid manifest should pass: {errors}")
 
-    def test_missing_required_fields(self):
-        manifest = {"name": "test"}
-        errors = validate_plugin_manifest_schema(manifest, "curated")
-        self.assertTrue(len(errors) > 0, "Should detect missing fields")
-        self.assertTrue(any("missing required field" in e for e in errors))
+    def test_legacy_manifest_warns(self):
+        """Legacy manifests without policyTier/capabilities should warn, not error."""
+        manifest = {
+            "name": "legacy-plugin",
+            "version": "1.0.0",
+            "description": "A legacy plugin"
+        }
+        errors, warnings = validate_plugin_manifest_schema(manifest, "curated")
+        self.assertEqual(len(errors), 0, "Legacy manifest should not error")
+        self.assertTrue(len(warnings) > 0, "Legacy manifest should warn")
+        self.assertTrue(any("legacy" in w.lower() for w in warnings))
 
     def test_invalid_name_format(self):
         manifest = {
@@ -269,8 +275,8 @@ class TestManifestSchemaValidation(unittest.TestCase):
             "policyTier": "curated",
             "capabilities": {"network": {"mode": "none"}}
         }
-        errors = validate_plugin_manifest_schema(manifest, "curated")
-        self.assertTrue(any("lowercase with hyphens" in e for e in errors))
+        errors, warnings = validate_plugin_manifest_schema(manifest, "curated")
+        self.assertTrue(any("lowercase with hyphens" in w for w in warnings))
 
     def test_invalid_version_format(self):
         manifest = {
@@ -280,8 +286,8 @@ class TestManifestSchemaValidation(unittest.TestCase):
             "policyTier": "curated",
             "capabilities": {"network": {"mode": "none"}}
         }
-        errors = validate_plugin_manifest_schema(manifest, "curated")
-        self.assertTrue(any("semver" in e for e in errors))
+        errors, warnings = validate_plugin_manifest_schema(manifest, "curated")
+        self.assertTrue(any("semver" in w for w in warnings))
 
     def test_tier_mismatch(self):
         manifest = {
@@ -291,7 +297,7 @@ class TestManifestSchemaValidation(unittest.TestCase):
             "policyTier": "community",  # Mismatch with tier="curated"
             "capabilities": {"network": {"mode": "none"}}
         }
-        errors = validate_plugin_manifest_schema(manifest, "curated")
+        errors, warnings = validate_plugin_manifest_schema(manifest, "curated")
         self.assertTrue(any("does not match" in e for e in errors))
 
     def test_wildcard_domain_rejected(self):
@@ -308,7 +314,7 @@ class TestManifestSchemaValidation(unittest.TestCase):
             },
             "risk": {"dataEgress": "low"}
         }
-        errors = validate_plugin_manifest_schema(manifest, "community")
+        errors, warnings = validate_plugin_manifest_schema(manifest, "community")
         self.assertTrue(any("wildcard" in e.lower() for e in errors))
 
     def test_ip_address_domain_rejected(self):
@@ -325,7 +331,7 @@ class TestManifestSchemaValidation(unittest.TestCase):
             },
             "risk": {"dataEgress": "low"}
         }
-        errors = validate_plugin_manifest_schema(manifest, "community")
+        errors, warnings = validate_plugin_manifest_schema(manifest, "community")
         self.assertTrue(any("IP address" in e for e in errors))
 
     def test_community_requires_risk(self):
@@ -339,7 +345,7 @@ class TestManifestSchemaValidation(unittest.TestCase):
             }
             # Missing risk field
         }
-        errors = validate_plugin_manifest_schema(manifest, "community")
+        errors, warnings = validate_plugin_manifest_schema(manifest, "community")
         self.assertTrue(any("risk required" in e for e in errors))
 
 
