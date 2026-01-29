@@ -2,7 +2,7 @@
   "$comment": "Example curated plugin manifest - no network access allowed",
   "name": "juni",
   "version": "2.1.0",
-  "description": "Juni Skills Suite - Feature development workflows (/juni:cook) + context safety (/juni:guard)",
+  "description": "Juni Skills Suite - Feature development workflows (/juni:cook, /juni:sous-chef, /juni:cook-menu)",
   "author": {
     "name": "PJuniszewski",
     "url": "https://github.com/PJuniszewski"

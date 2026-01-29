@@ -87,7 +87,8 @@ Security-first plugins with no network access. See [CATALOG.md](CATALOG.md) for 
 
 | Plugin | Description | Version |
 |--------|-------------|---------|
-| **juni** | Juni Skills Suite - /juni:cook (workflows), /juni:guard (context safety) | v2.1.0 |
+| **juni** | Juni Skills Suite - /juni:cook (workflows), /juni:sous-chef, /juni:cook-menu | v2.1.0 |
+| **context-guard** | LLM Epistemic Safety Layer - /guard (context integrity guardrails) | v1.0.0-beta |
 
 ## Community Plugins
 
