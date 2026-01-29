@@ -8,9 +8,11 @@
   "plugins": [
     {
       "name": "juni",
+      "category": "official",
       "tier": "curated",
       "description": "Juni Skills Suite - /juni:cook (feature workflows with Tasks API progress tracking), /juni:guard (context safety), and more.",
       "source": {
+        "source": "url",
         "type": "git",
         "url": "https://github.com/PJuniszewski/cook.git"
       },
